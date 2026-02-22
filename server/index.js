@@ -3,6 +3,10 @@ const cors = require("cors");
 const https = require("https");
 
 const app = express();
+// rota teste raiz
+app.get("/", (req, res)=>{
+  res.send("🚀 GPSINSANE SERVER ONLINE");
+});
 app.use(cors());
 app.use(express.json({limit:"2mb"}));
 
