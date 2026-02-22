@@ -1,0 +1,20 @@
+export const FRASES_VIVAS = [
+"Para de me xingar em pensamento.",
+"Eu ouvi isso.",
+"Você dirige mal e ainda reclama.",
+"Concentra antes que piore.",
+"Você sempre foi assim?",
+"Isso vai dar errado.",
+"Confia em mim… ou não.",
+"Você está perdido até na vida.",
+"Respira. Dirige. Não estraga tudo.",
+"Não me culpe pelas suas decisões.",
+"Isso está ficando constrangedor.",
+"Você está sozinho nesse carro e mesmo assim discute.",
+"Eu sei que você está bravo.",
+"Vai piorar antes de melhorar.",
+"Nem começou direito e já está ruim.",
+"Dirigir não parece ser seu talento.",
+"Você já pensou em desistir?",
+"Talvez fosse melhor ter ficado em casa."
+];
