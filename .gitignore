@@ -31,6 +31,9 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
+server/.env
 .env*.local
 
 # typescript
@@ -43,3 +46,12 @@ app-example
 /android
 google-voice.json
 app/google-voice.json
+
+# XTTS / Python (IMPORTANTE)
+.venv311/
+.venv/
+venv/
+server/local-tts/.venv/
+server/local-tts/.models/
+__pycache__/
+*.pyc
