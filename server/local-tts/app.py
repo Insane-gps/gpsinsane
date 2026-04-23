@@ -7,6 +7,10 @@ from pathlib import Path
 from threading import Lock
 from typing import Dict, Optional, Tuple
 
+# Accept Coqui TTS license non-interactively (required for headless/CI environments).
+# This must be set before the TTS library is imported so the prompt is never shown.
+os.environ.setdefault("COQUI_TOS_AGREED", "1")
+
 import numpy as np
 import torch
 from fastapi import FastAPI, HTTPException

@@ -18,11 +18,12 @@ const VENV_PYTHON = path.resolve(
   IS_WIN ? "python.exe" : "python"
 );
 
+// Only use the venv Python (or an explicit override).
+// Global python3/python are intentionally excluded: they lack uvicorn/TTS and
+// produce confusing "No module named uvicorn" noise before a real error.
 const PYTHON_CANDIDATES = [
   String(process.env.PYTHON_BIN || "").trim(),
   VENV_PYTHON,
-  "python3",
-  "python",
 ].filter(Boolean);
 
 let localTtsProcess = null;
@@ -128,17 +129,31 @@ async function startLocalTts() {
 
   let lastError = null;
 
+  const fs = require("fs");
+
   for (const pythonBin of PYTHON_CANDIDATES) {
+    // Detect missing venv early and give a clear actionable message
+    if (pythonBin === VENV_PYTHON && !fs.existsSync(VENV_PYTHON)) {
+      const err = new Error(
+        `[local-tts] venv Python not found at ${VENV_PYTHON}. ` +
+        `Run postinstall (npm install inside server/) or set PYTHON_BIN to a valid interpreter.`
+      );
+      console.error(err.message);
+      throw err;
+    }
+
     try {
       await spawnLocalTtsWithPythonBin(pythonBin);
       return;
     } catch (err) {
       lastError = err;
       console.error(`[local-tts] falha com ${pythonBin}:`, err?.message || err);
+      // Do not fall through to global python — fail fast with a clear error
+      throw lastError;
     }
   }
 
-  throw lastError || new Error("Could not start local-tts");
+  throw lastError || new Error("Could not start local-tts: no Python interpreter configured");
 }
 
 function startVoiceServerNode() {
