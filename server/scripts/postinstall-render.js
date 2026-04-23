@@ -92,4 +92,30 @@ if (install.status !== 0) {
   process.exit(install.status || 1);
 }
 
+// Re-assert CPU-only torch stack in case any transitive dependency attempted
+// to pull a different torchaudio/torch build while installing requirements.
+const torchCpuRepair = run(VENV_PYTHON, [
+  "-m", "pip", "install",
+  "--index-url", "https://download.pytorch.org/whl/cpu",
+  "--force-reinstall",
+  "--no-deps",
+  "torch==2.2.0",
+]);
+if (torchCpuRepair.status !== 0) {
+  console.error("[render-postinstall] Falha ao reafirmar PyTorch CPU.");
+  process.exit(torchCpuRepair.status || 1);
+}
+
+const torchaudioCpuRepair = run(VENV_PYTHON, [
+  "-m", "pip", "install",
+  "--index-url", "https://download.pytorch.org/whl/cpu",
+  "--force-reinstall",
+  "--no-deps",
+  "torchaudio==2.2.0",
+]);
+if (torchaudioCpuRepair.status !== 0) {
+  console.error("[render-postinstall] Falha ao reafirmar torchaudio CPU.");
+  process.exit(torchaudioCpuRepair.status || 1);
+}
+
 console.log("[render-postinstall] PY REQS READY");
