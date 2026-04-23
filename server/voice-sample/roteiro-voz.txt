@@ -1,0 +1,52 @@
+ROTEIRO DE GRAVAÇÃO — VOZ CLONADA (XTTS)
+
+Objetivo
+- Gerar 1 áudio limpo de 60 a 120 segundos para clonagem de voz.
+- Arquivo final recomendado: minha-voz.wav (mono, 16-bit, 22050 Hz ou 16000 Hz).
+
+Como gravar (celular)
+1) Vá para um local silencioso (sem TV, sem música, sem vento).
+2) Use o gravador do celular (fale a 15-20 cm do microfone).
+3) Fale natural, sem pressa, sem sussurrar.
+4) Grave em um único take de 1 a 2 minutos.
+5) Evite bater no microfone / respirar muito próximo.
+
+Texto sugerido para gravação (leia tudo de forma natural)
+"Olá, este é um teste de voz para navegação no aplicativo GPSClean.
+Agora vou falar frases curtas para direção e rota.
+Vire à direita na próxima rua.
+Vire à esquerda depois do semáforo.
+Siga em frente por dois quilômetros.
+Faça o retorno quando for possível.
+Mantenha-se na faixa da esquerda.
+Mantenha-se na faixa da direita.
+Você chegou ao destino.
+Rota recalculada com sucesso.
+Atenção para radar adiante.
+Atenção para buraco na pista.
+Atenção para lombada.
+Posto de combustível próximo.
+Hospital próximo.
+Escola próxima.
+Polícia próxima.
+Agora vou incluir frases mais expressivas para avisos dinâmicos.
+Evite essa rua, está muito lenta.
+O trânsito está pesado neste trecho.
+Cuidado, motorista distraído à frente.
+Reduza a velocidade e mantenha distância.
+Respire fundo e siga com segurança.
+Você está indo muito bem.
+Vamos continuar com calma até o destino final.
+Fim do teste de voz." 
+
+Onde salvar
+- Salve o arquivo em: server/voice-sample/minha-voz.wav
+
+Configuração no server/.env
+- VOICE_PROVIDER=local
+- LOCAL_TTS_URL=http://127.0.0.1:8020/tts
+- LOCAL_VOICE_SAMPLE=C:\\Users\\user\\gpsclean\\server\\voice-sample\\minha-voz.wav
+- LOCAL_LANGUAGE=pt
+
+Dica
+- Se puder, grave 2 versões (A e B). Depois teste as duas e mantenha a mais limpa.

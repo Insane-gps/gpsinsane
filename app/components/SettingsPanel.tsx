@@ -1,194 +1,439 @@
-import React from "react";
-import { ScrollView, Text, TouchableOpacity, View } from "react-native";
-
+import React, { useMemo, useState } from "react";
+import { Alert, Image, Keyboard, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import type { PlanoUsuario } from "../../data/configPlanos";
+import { IDIOMAS_DISPONIVEIS, type IdiomaId } from "../../data/idiomas";
+import { getVeiculoPorId, VEICULOS_CARROS, VEICULOS_MOTOS } from "../../data/veiculos";
+import FaleConoscoSection from "./FaleConoscoSection";
+import FeedbackInboxModal from "./FeedbackInboxModal";
 
 type Props = {
-  visivel:boolean;
-  fechar:()=>void;
-  trocarIdioma:(id:"pt"|"en")=>void;
-  modoInsano:boolean;
-  setModoInsano:(v:boolean)=>void;
-  modoPro:boolean;
-  somPolicia:boolean;
-setSomPolicia:(v:boolean)=>void;
-
-somRadar:boolean;
-setSomRadar:(v:boolean)=>void;
-  textos:any;   // ← ADICIONE ESTA LINHA
+  visivel: boolean;
+  fechar: () => void;
+  usuarioId?: string | null;
+  idiomaAtual: IdiomaId;
+  trocarIdioma: (id: IdiomaId) => void;
+  modoComico: boolean;
+  setModoComico: (v: boolean) => void;
+  modoPro: boolean;
+  planoAtual?: PlanoUsuario;
+  abrirTelaPro: () => void;
+  somPolicia: boolean;
+  setSomPolicia: (v: boolean) => void;
+  somRadar: boolean;
+  setSomRadar: (v: boolean) => void;
+  veiculoGpsId: string;
+  trocarVeiculoGps: (id: string) => void;
+  raioNotificacaoKm?: number;
+  trocarRaioNotificacao?: (km: number) => void;
+  textos: any;
+  mostrarBotaoPremiumTopo?: boolean;
+  textoBotaoPremiumTopo?: string;
+  onPressBotaoPremiumTopo?: () => void | Promise<void>;
 };
+
 export default function SettingsPanel({
   visivel,
   fechar,
+  usuarioId,
+  idiomaAtual,
   trocarIdioma,
-  modoInsano,
-  setModoInsano,
+  modoComico,
+  setModoComico,
   modoPro,
+  planoAtual = "free",
+  abrirTelaPro,
   somPolicia,
   setSomPolicia,
   somRadar,
   setSomRadar,
-  textos
-}:Props){
-if(!visivel) return null;
+  veiculoGpsId,
+  trocarVeiculoGps,
+  raioNotificacaoKm = 10,
+  trocarRaioNotificacao = () => {},
+  textos,
+  mostrarBotaoPremiumTopo = false,
+  textoBotaoPremiumTopo = "ATIVAR PREMIUM",
+  onPressBotaoPremiumTopo,
+}: Props) {
+  const [painelFeedbackVisivel, setPainelFeedbackVisivel] = useState(false);
+  const [modalVeiculoVisivel, setModalVeiculoVisivel] = useState(false);
 
-return(
-<View style={{
-  position:"absolute",
-  top:0,
-  left:0,
-  right:0,
-  bottom:0,
-  backgroundColor:"#111",
-  zIndex:99999,
-}}>
+  const veiculoAtual = useMemo(() => getVeiculoPorId(veiculoGpsId), [veiculoGpsId]);
 
-<ScrollView style={{flex:1, paddingTop:70, paddingHorizontal:20}}>
+  function textoComKm(km: number) {
+    const base = String(textos?.ateKm || "Até {{km}} km");
+    return base.replace("{{km}}", String(km));
+  }
 
-{/* FECHAR */}
-<TouchableOpacity
-onPress={fechar}
-style={{
-  position:"absolute",
-  top:35,
-  right:20,
-  zIndex:10
-}}>
-<Text style={{color:"#fff",fontSize:26}}>✕</Text>
-</TouchableOpacity>
+  function avisoTraducaoModoComico(idioma: IdiomaId) {
+    const porIdioma: Record<IdiomaId, { titulo: string; mensagem: string; ok: string }> = {
+      pt: {
+        titulo: "Aviso",
+        mensagem: "No modo cômico, piadas e xingamentos são traduzidos para todos os idiomas. Algumas frases podem soar estranhas fora do idioma original.",
+        ok: "Entendi",
+      },
+      en: {
+        titulo: "Notice",
+        mensagem: "In comic mode, jokes and insults are translated into all languages. Some lines may sound odd outside the original language.",
+        ok: "Got it",
+      },
+      es: {
+        titulo: "Aviso",
+        mensagem: "En modo cómico, los chistes e insultos se traducen a todos los idiomas. Algunas frases pueden sonar raras fuera del idioma original.",
+        ok: "Entendido",
+      },
+      fr: {
+        titulo: "Avertissement",
+        mensagem: "En mode comique, les blagues et insultes sont traduites dans toutes les langues. Certaines phrases peuvent sembler étranges hors de la langue d'origine.",
+        ok: "Compris",
+      },
+      de: {
+        titulo: "Hinweis",
+        mensagem: "Im Komikmodus werden Witze und Beleidigungen in alle Sprachen ubersetzt. Manche Sätze konnen außerhalb der Originalsprache ungewohnt klingen.",
+        ok: "Verstanden",
+      },
+    };
 
-<Text style={{
-  color:"#fff",
-  fontSize:26,
-  fontWeight:"bold",
-  marginBottom:30
-}}>
-⚙️ {textos.configuracoes}
+    return porIdioma[idioma] || porIdioma.pt;
+  }
 
-</Text>
+  function pressionarModoComico() {
+    if (!modoPro) {
+      abrirTelaPro();
+      return;
+    }
 
-{/* ================= CONTA ================= */}
+    if (!modoComico) {
+      const aviso = avisoTraducaoModoComico(idiomaAtual);
+      Alert.alert(aviso.titulo, aviso.mensagem, [{ text: aviso.ok }]);
+    }
 
-<Text style={{color:"#888", marginBottom:10}}>
-Plano
-</Text>
+    setModoComico(!modoComico);
+  }
 
-<View style={{
-  backgroundColor:"#1c1c1c",
-  padding:18,
-  borderRadius:12,
-  marginBottom:25
-}}>
-<Text style={{color:"#fff"}}>
-Status: {modoPro ? "PRO Ativo" : "Free"}
-</Text>
-</View>
+  if (!visivel) return null;
 
-{/* ================= MODO INSANO ================= */}
+  return (
+    <View
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "#111",
+        zIndex: 99999,
+      }}
+    >
+      <TouchableOpacity
+        onPress={fechar}
+        style={{
+          position: "absolute",
+          top: 35,
+          right: 20,
+          zIndex: 20,
+        }}
+      >
+        <Text style={{ color: "#fff", fontSize: 26 }}>✕</Text>
+      </TouchableOpacity>
 
-<Text style={{color:"#888", marginBottom:10}}>
-Modo Insano
-</Text>
+      <ScrollView
+        style={{ flex: 1, paddingHorizontal: 20 }}
+        contentContainerStyle={{ paddingTop: 70, paddingBottom: 120, flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        decelerationRate="normal"
+        overScrollMode="always"
+        showsVerticalScrollIndicator={true}
+        scrollEventThrottle={16}
+      >
+        <Text
+          style={{
+            color: "#fff",
+            fontSize: 26,
+            fontWeight: "bold",
+            marginBottom: 14,
+          }}
+        >
+          ⚙️ {textos.configuracoes}
+        </Text>
 
-<TouchableOpacity
-onPress={()=>setModoInsano(!modoInsano)}
-style={{
-  backgroundColor: modoInsano ? "#8B0000" : "#1c1c1c",
-  padding:18,
-  borderRadius:12,
-  marginBottom:25
-}}>
-<Text style={{color:"#fff"}}>
-{modoInsano ? "Desativar Insano 😈" : "Ativar Insano 😎"}
-</Text>
-</TouchableOpacity>
+        {mostrarBotaoPremiumTopo && (
+          <TouchableOpacity
+            onPress={() => {
+              Keyboard.dismiss();
+              onPressBotaoPremiumTopo?.();
+            }}
+            style={{
+              backgroundColor: "#d4a017",
+              paddingVertical: 12,
+              borderRadius: 10,
+              alignItems: "center",
+              marginBottom: 18,
+            }}
+          >
+            <Text style={{ color: "#111", fontWeight: "900", fontSize: 12 }}>
+              {textoBotaoPremiumTopo}
+            </Text>
+          </TouchableOpacity>
+        )}
 
-{/* ================= IDIOMA ================= */}
+        <Text style={{ color: "#888", marginBottom: 10 }}>{textos?.plano || "Plano"}</Text>
 
-<Text style={{color:"#888", marginBottom:10}}>
-{textos.idioma}
+        <View
+          style={{
+            backgroundColor: "#1c1c1c",
+            padding: 18,
+            borderRadius: 12,
+            marginBottom: 25,
+          }}
+        >
+          <Text style={{ color: "#fff" }}>
+            {textos?.status || "Status"}: {planoAtual === "premium" ? "Premium" : planoAtual === "pro" ? "Pro" : "Free"}
+          </Text>
+        </View>
 
-</Text>
+        <Text style={{ color: "#888", marginBottom: 10 }}>{textos?.modoComicoTitulo || "Modo cômico"}</Text>
 
-<TouchableOpacity
-onPress={()=>trocarIdioma("pt")}
-style={{
-  backgroundColor:"#1c1c1c",
-  padding:18,
-  borderRadius:12,
-  marginBottom:12
-}}>
-<Text style={{color:"#fff"}}>
-🇧🇷 Português
-</Text>
-</TouchableOpacity>
+        <TouchableOpacity
+          onPress={pressionarModoComico}
+          style={{
+            backgroundColor: modoComico ? "#b9411c" : "#3cf916",
+            padding: 14,
+            borderRadius: 10,
+            alignItems: "center",
+            marginBottom: 25,
+          }}
+        >
+          <Text style={{ color: "#523333", fontWeight: "bold" }}>
+            {modoComico ? (textos?.desativarModoComico || "Desativar modo cômico") : (textos?.ativarModoComico || "Modo cômico 😎")}
+          </Text>
+        </TouchableOpacity>
 
-<TouchableOpacity
-onPress={()=>trocarIdioma("en")}
-style={{
-  backgroundColor:"#1c1c1c",
-  padding:18,
-  borderRadius:12,
-  marginBottom:25
-}}>
-<Text style={{color:"#fff"}}>
-🇺🇸 English
-</Text>
-</TouchableOpacity>
-{/* ================= NAVEGAÇÃO ================= */}
+        <Text style={{ color: "#888", marginBottom: 10 }}>{textos.idioma}</Text>
 
-<Text style={{color:"#888", marginTop:30, marginBottom:10}}>
-Navegação
-</Text>
+        <View style={{ marginBottom: 25 }}>
+          {IDIOMAS_DISPONIVEIS.map((idioma) => {
+            const ativo = idiomaAtual === idioma.id;
+            return (
+              <TouchableOpacity
+                key={idioma.id}
+                onPress={() => trocarIdioma(idioma.id)}
+                style={{
+                  backgroundColor: ativo ? "#0ea5e922" : "#1c1c1c",
+                  borderColor: ativo ? "#0ea5e9" : "transparent",
+                  borderWidth: 1,
+                  padding: 18,
+                  borderRadius: 12,
+                  marginBottom: 12,
+                }}
+              >
+                <Text style={{ color: "#fff" }}>
+                  {idioma.flag} {idioma.label}
+                  {ativo ? " ✓" : ""}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
-<View style={{backgroundColor:"#1c1c1c", padding:18, borderRadius:12}}>
+        <Text style={{ color: "#888", marginTop: 30, marginBottom: 10 }}>{textos?.navegar || "Navegação"}</Text>
 
-<TouchableOpacity
-  onPress={()=>setModoInsano(!modoInsano)}
-  style={{marginBottom:15}}
->
-<Text style={{color:"#fff"}}>
-{modoInsano ? "🔥 Modo Insano: ON" : "Modo Insano: OFF"}
-</Text>
-</TouchableOpacity>
+        <View style={{ backgroundColor: "#1c1c1c", padding: 18, borderRadius: 12 }}>
+          <TouchableOpacity onPress={() => setSomPolicia(!somPolicia)} style={{ marginBottom: 15 }}>
+            <Text style={{ color: "#fff" }}>{somPolicia ? (textos?.somPoliciaOn || "🚔 Som polícia: ON") : (textos?.somPoliciaOff || "Som polícia: OFF")}</Text>
+          </TouchableOpacity>
 
-<TouchableOpacity
-  onPress={()=>setSomPolicia(!somPolicia)}
-  style={{marginBottom:15}}
->
-<Text style={{color:"#fff"}}>
-{somPolicia ? "🚔 Som Polícia: ON" : "Som Polícia: OFF"}
-</Text>
-</TouchableOpacity>
+          <TouchableOpacity onPress={() => setSomRadar(!somRadar)}>
+            <Text style={{ color: "#fff" }}>{somRadar ? (textos?.somRadarOn || "📷 Som radar: ON") : (textos?.somRadarOff || "Som radar: OFF")}</Text>
+          </TouchableOpacity>
 
-<TouchableOpacity
-  onPress={()=>setSomRadar(!somRadar)}
->
-<Text style={{color:"#fff"}}>
-{somRadar ? "📷 Som Radar: ON" : "Som Radar: OFF"}
-</Text>
-</TouchableOpacity>
+          <Text style={{ color: "#94a3b8", marginTop: 16, marginBottom: 8, fontSize: 12 }}>
+            {textos?.raioNotificacaoOfertas || "Raio de notificação de ofertas"}
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {[10, 25, 50, 100].map((km) => {
+              const ativo = Number(raioNotificacaoKm || 10) === km;
+              return (
+                <TouchableOpacity
+                  key={`notif-km-${km}`}
+                  onPress={() => trocarRaioNotificacao(km)}
+                  style={{
+                    backgroundColor: ativo ? "#166534" : "#0f172a",
+                    borderColor: ativo ? "#22c55e" : "#334155",
+                    borderWidth: 1,
+                    borderRadius: 999,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    marginRight: 8,
+                  }}
+                >
+                  <Text style={{ color: ativo ? "#dcfce7" : "#cbd5e1", fontWeight: "700", fontSize: 12 }}>
+                    {textoComKm(km)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
 
-</View>
-{/* ================= SISTEMA ================= */}
+        <Text style={{ color: "#888", marginTop: 30, marginBottom: 10 }}>{textos?.veiculoGps || "Veículo do GPS"}</Text>
 
-<Text style={{color:"#888", marginBottom:10}}>
-Sistema
-</Text>
+        <View style={{ backgroundColor: "#1c1c1c", padding: 18, borderRadius: 12, marginBottom: 25 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+            <Image
+              source={veiculoAtual?.source || VEICULOS_CARROS[0]?.source}
+              style={{ width: 54, height: 54, borderRadius: 8, marginRight: 12, backgroundColor: "#0a0a0a" }}
+              resizeMode="contain"
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>{veiculoAtual?.nome || "Padrão"}</Text>
+              <Text style={{ color: "#94a3b8", fontSize: 12 }}>
+                {veiculoAtual?.tipo === "moto" ? "Moto" : "Carro"}
+              </Text>
+            </View>
+          </View>
 
-<View style={{
-  backgroundColor:"#1c1c1c",
-  padding:18,
-  borderRadius:12,
-  marginBottom:25
-}}>
-<Text style={{color:"#666"}}>
-Versão 1.0.0
-</Text>
-</View>
+          <TouchableOpacity
+            onPress={() => setModalVeiculoVisivel(true)}
+            style={{
+              backgroundColor: "#0f172a",
+              borderWidth: 1,
+              borderColor: "#334155",
+              paddingVertical: 12,
+              borderRadius: 10,
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: "#e2e8f0", fontWeight: "700" }}>{textos?.escolherVeiculo || "Escolher veículo"}</Text>
+          </TouchableOpacity>
+        </View>
 
-<View style={{height:120}}/>
+        <FaleConoscoSection usuarioId={usuarioId} textos={textos} />
 
-</ScrollView>
-</View>
-);
+        <Text style={{ color: "#888", marginBottom: 10 }}>{textos?.painelInterno || "Painel interno"}</Text>
+
+        <TouchableOpacity
+          onPress={() => setPainelFeedbackVisivel(true)}
+          style={{
+            backgroundColor: "#111827",
+            borderWidth: 1,
+            borderColor: "#334155",
+            padding: 18,
+            borderRadius: 12,
+            marginBottom: 25,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text style={{ color: "#e2e8f0", fontWeight: "bold" }}>{textos?.painelFeedback || "Abrir painel de feedback"}</Text>
+        </TouchableOpacity>
+
+        <Text style={{ color: "#888", marginBottom: 10 }}>{textos?.sistema || "Sistema"}</Text>
+
+        <View
+          style={{
+            backgroundColor: "#1c1c1c",
+            padding: 18,
+            borderRadius: 12,
+            marginBottom: 25,
+          }}
+        >
+          <Text style={{ color: "#666" }}>Versão 1.0.0</Text>
+        </View>
+
+        <View style={{ height: 120 }} />
+      </ScrollView>
+
+      <FeedbackInboxModal visivel={painelFeedbackVisivel} onClose={() => setPainelFeedbackVisivel(false)} />
+
+      {modalVeiculoVisivel && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "#0b0f19",
+            zIndex: 999999,
+            paddingTop: 60,
+            paddingHorizontal: 16,
+          }}
+        >
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <Text style={{ color: "#fff", fontSize: 20, fontWeight: "800" }}>{textos?.veiculoGps || "Veículo do GPS"}</Text>
+            <TouchableOpacity onPress={() => setModalVeiculoVisivel(false)}>
+              <Text style={{ color: "#fff", fontSize: 18 }}>{textos?.fechar || "Fechar"}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }}>
+            <Text style={{ color: "#94a3b8", marginBottom: 8 }}>{textos?.carros || "Carros"}</Text>
+            {VEICULOS_CARROS.map((item) => {
+              const ativo = veiculoGpsId === item.id;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  onPress={() => {
+                    trocarVeiculoGps(item.id);
+                    setModalVeiculoVisivel(false);
+                  }}
+                  style={{
+                    backgroundColor: ativo ? "#0ea5e922" : "#111",
+                    borderWidth: 1,
+                    borderColor: ativo ? "#0ea5e9" : "#2a2a2a",
+                    padding: 10,
+                    borderRadius: 10,
+                    marginBottom: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                  }}
+                >
+                  <Image
+                    source={item.source}
+                    style={{ width: 54, height: 54, borderRadius: 8, marginRight: 12, backgroundColor: "#0a0a0a" }}
+                    resizeMode="contain"
+                  />
+                  <Text style={{ color: "#fff", flex: 1, fontSize: 15 }}>{ativo ? "✅ " : ""}{item.nome}</Text>
+                </TouchableOpacity>
+              );
+            })}
+
+            <Text style={{ color: "#94a3b8", marginTop: 12, marginBottom: 8 }}>{textos?.motos || "Motos"}</Text>
+            {VEICULOS_MOTOS.map((item) => {
+              const ativo = veiculoGpsId === item.id;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  onPress={() => {
+                    trocarVeiculoGps(item.id);
+                    setModalVeiculoVisivel(false);
+                  }}
+                  style={{
+                    backgroundColor: ativo ? "#0ea5e922" : "#111",
+                    borderWidth: 1,
+                    borderColor: ativo ? "#0ea5e9" : "#2a2a2a",
+                    padding: 10,
+                    borderRadius: 10,
+                    marginBottom: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                  }}
+                >
+                  <Image
+                    source={item.source}
+                    style={{ width: 54, height: 54, borderRadius: 8, marginRight: 12, backgroundColor: "#0a0a0a" }}
+                    resizeMode="contain"
+                  />
+                  <Text style={{ color: "#fff", flex: 1, fontSize: 15 }}>{ativo ? "✅ " : ""}{item.nome}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+    </View>
+  );
 }

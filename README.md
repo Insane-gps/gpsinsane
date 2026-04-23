@@ -42,6 +42,33 @@ To learn more about developing your project with Expo, look at the following res
 - [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
 - [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
 
+## Play Store + Firebase (quick setup)
+
+Use this flow to publish safely and switch Firebase projects without editing source code.
+
+1. Copy `.env.example` to `.env` for local dev.
+2. Fill all `EXPO_PUBLIC_FIREBASE_*` values with your Firebase project config.
+3. Keep `EXPO_PUBLIC_ENABLE_TEST_PLAN_CYCLE=true` only in local/internal builds.
+4. For Play Store builds, keep `EXPO_PUBLIC_ENABLE_TEST_PLAN_CYCLE=false`.
+5. Add the same variables in EAS secrets/env for production.
+
+Example (EAS):
+
+```bash
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_API_KEY --value "YOUR_VALUE"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN --value "YOUR_VALUE"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_PROJECT_ID --value "YOUR_VALUE"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET --value "YOUR_VALUE"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID --value "YOUR_VALUE"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_APP_ID --value "YOUR_VALUE"
+```
+
+Notes:
+
+- `eas.json` already defines `EXPO_PUBLIC_APP_ENV` by profile (`development`, `preview`, `production`).
+- Firebase initialization in `firebase.ts` now prioritizes `EXPO_PUBLIC_FIREBASE_*` and falls back to local config.
+- In production profile, test plan-cycle button is disabled by env.
+
 ## Join the community
 
 Join our community of developers creating universal apps.
