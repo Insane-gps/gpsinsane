@@ -9,8 +9,18 @@ const LOCAL_TTS_BOOT_TIMEOUT_MS = Math.max(
   Number(process.env.LOCAL_TTS_BOOT_TIMEOUT_MS || 300000) || 300000
 );
 
+// Prefer the venv Python so we use the isolated environment created by postinstall
+const IS_WIN = process.platform === "win32";
+const VENV_PYTHON = path.resolve(
+  LOCAL_TTS_DIR,
+  ".venv",
+  IS_WIN ? "Scripts" : "bin",
+  IS_WIN ? "python.exe" : "python"
+);
+
 const PYTHON_CANDIDATES = [
   String(process.env.PYTHON_BIN || "").trim(),
+  VENV_PYTHON,
   "python3",
   "python",
 ].filter(Boolean);

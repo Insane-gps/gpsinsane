@@ -2,15 +2,24 @@ const { spawnSync } = require("child_process");
 const path = require("path");
 
 const SERVER_DIR = path.resolve(__dirname, "..");
-const REQUIREMENTS = path.resolve(SERVER_DIR, "local-tts", "requirements.txt");
+const LOCAL_TTS_DIR = path.resolve(SERVER_DIR, "local-tts");
+const VENV_DIR = path.resolve(LOCAL_TTS_DIR, ".venv");
+const REQUIREMENTS = path.resolve(LOCAL_TTS_DIR, "requirements.txt");
 
-function run(cmd, args, cwd = SERVER_DIR) {
-  return spawnSync(cmd, args, {
+// On Linux the venv pip/python are under bin/, on Windows under Scripts/
+const IS_WIN = process.platform === "win32";
+const VENV_BIN = path.join(VENV_DIR, IS_WIN ? "Scripts" : "bin");
+const VENV_PYTHON = path.join(VENV_BIN, IS_WIN ? "python.exe" : "python");
+const VENV_PIP = path.join(VENV_BIN, IS_WIN ? "pip.exe" : "pip");
+
+function run(cmd, args, cwd = LOCAL_TTS_DIR) {
+  const result = spawnSync(cmd, args, {
     cwd,
     env: process.env,
     stdio: "inherit",
     shell: false,
   });
+  return result;
 }
 
 function isRender() {
@@ -21,31 +30,39 @@ if (!isRender()) {
   process.exit(0);
 }
 
-const candidates = [
-  ["python3", ["-m", "pip", "install", "--upgrade", "pip"]],
-  ["python", ["-m", "pip", "install", "--upgrade", "pip"]],
-];
-
-let pythonCmd = null;
-
-for (const [cmd, args] of candidates) {
+// Find a usable system Python to create the venv
+const candidates = ["python3", "python"];
+let systemPython = null;
+for (const cmd of candidates) {
   const probe = spawnSync(cmd, ["--version"], { stdio: "ignore" });
   if (probe.status === 0) {
-    pythonCmd = cmd;
-    run(cmd, args);
+    systemPython = cmd;
     break;
   }
 }
 
-if (!pythonCmd) {
-  console.error("[render-postinstall] Python não encontrado para instalar dependências do local-tts.");
+if (!systemPython) {
+  console.error("[render-postinstall] Python não encontrado no sistema.");
   process.exit(1);
 }
 
-const install = run(pythonCmd, ["-m", "pip", "install", "-r", REQUIREMENTS]);
+// Create virtual environment
+console.log("[render-postinstall] PY VENV CREATING");
+const venvResult = run(systemPython, ["-m", "venv", VENV_DIR], LOCAL_TTS_DIR);
+if (venvResult.status !== 0) {
+  console.error("[render-postinstall] Falha ao criar venv.");
+  process.exit(venvResult.status || 1);
+}
+console.log("[render-postinstall] PY VENV READY");
+
+// Upgrade pip inside the venv
+run(VENV_PYTHON, ["-m", "pip", "install", "--upgrade", "pip"]);
+
+// Install requirements using the venv pip
+console.log("[render-postinstall] PY REQS INSTALLING");
+const install = run(VENV_PYTHON, ["-m", "pip", "install", "-r", REQUIREMENTS]);
 if (install.status !== 0) {
   console.error("[render-postinstall] Falha ao instalar dependências Python do local-tts.");
   process.exit(install.status || 1);
 }
-
-console.log("[render-postinstall] Dependências Python do local-tts instaladas com sucesso.");
+console.log("[render-postinstall] PY REQS READY");
