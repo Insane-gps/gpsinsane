@@ -58,6 +58,20 @@ console.log("[render-postinstall] PY VENV READY");
 // Upgrade pip inside the venv
 run(VENV_PYTHON, ["-m", "pip", "install", "--upgrade", "pip"]);
 
+// Install PyTorch CPU-only wheel BEFORE requirements.txt so pip does not
+// resolve a CUDA/NVIDIA build when processing the rest of the deps.
+console.log("[render-postinstall] PY TORCH CPU INSTALLING");
+const torchInstall = run(VENV_PYTHON, [
+  "-m", "pip", "install",
+  "--index-url", "https://download.pytorch.org/whl/cpu",
+  "torch==2.2.0",
+]);
+if (torchInstall.status !== 0) {
+  console.error("[render-postinstall] Falha ao instalar PyTorch CPU.");
+  process.exit(torchInstall.status || 1);
+}
+console.log("[render-postinstall] PY TORCH CPU READY");
+
 // Install requirements using the venv pip
 console.log("[render-postinstall] PY REQS INSTALLING");
 const install = run(VENV_PYTHON, ["-m", "pip", "install", "-r", REQUIREMENTS]);
