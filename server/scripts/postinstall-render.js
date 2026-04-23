@@ -72,6 +72,18 @@ if (torchInstall.status !== 0) {
 }
 console.log("[render-postinstall] PY TORCH CPU READY");
 
+console.log("[render-postinstall] PY TORCHAUDIO CPU INSTALLING");
+const torchaudioInstall = run(VENV_PYTHON, [
+  "-m", "pip", "install",
+  "--index-url", "https://download.pytorch.org/whl/cpu",
+  "torchaudio==2.2.0",
+]);
+if (torchaudioInstall.status !== 0) {
+  console.error("[render-postinstall] Falha ao instalar torchaudio CPU.");
+  process.exit(torchaudioInstall.status || 1);
+}
+console.log("[render-postinstall] PY TORCHAUDIO CPU READY");
+
 // Install requirements using the venv pip
 console.log("[render-postinstall] PY REQS INSTALLING");
 const install = run(VENV_PYTHON, ["-m", "pip", "install", "-r", REQUIREMENTS]);
@@ -79,4 +91,5 @@ if (install.status !== 0) {
   console.error("[render-postinstall] Falha ao instalar dependências Python do local-tts.");
   process.exit(install.status || 1);
 }
+
 console.log("[render-postinstall] PY REQS READY");
