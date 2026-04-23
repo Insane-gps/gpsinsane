@@ -118,4 +118,16 @@ if (torchaudioCpuRepair.status !== 0) {
   process.exit(torchaudioCpuRepair.status || 1);
 }
 
+const transformersRepair = run(VENV_PYTHON, [
+  "-m", "pip", "install",
+  "--force-reinstall",
+  "--no-deps",
+  "transformers==4.37.2",
+  "tokenizers==0.15.2",
+]);
+if (transformersRepair.status !== 0) {
+  console.error("[render-postinstall] Falha ao fixar transformers/tokenizers compatíveis.");
+  process.exit(transformersRepair.status || 1);
+}
+
 console.log("[render-postinstall] PY REQS READY");
