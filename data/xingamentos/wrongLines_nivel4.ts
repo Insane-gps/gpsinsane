@@ -72,7 +72,7 @@ export const LINHAS_COMICAS_PT_NIVEL_4: LinhaComica[] = [
 { texto: "Isso já passou do ridículo, epopeia interminável." },
 { texto: "Você só piora a situação, o que realmente se espera de você." },
 { texto: "Você consegue errar tudo que tenta, um ninja da falta de jeito." },
-{ texto: "Você conseguiu ferrar tudo de novo, como sempre seu energumeno." },
+{ texto: "Você conseguiu ferrar tudo de novo, como sempre seu energúmeno." },
 { texto: "Que porra de direção burra é essa? " },
 { texto: "Você dirige como se nunca tivesse visto uma rua." },
 { texto: "Olha isso, você estragou tudo de novo." },
@@ -198,7 +198,7 @@ export const LINHAS_COMICAS_PT_NIVEL_4: LinhaComica[] = [
 { texto: "{nome}, caralho, você passou de novo.", textoComNome: "{nome}, caralho, você passou de novo." },
 { texto: "{nome}, porra, você ignorou tudo, vai arrastar o cu na brita.", textoComNome: "{nome}, porra, você ignorou tudo vai arrastar o cu na brita." },
 { texto: "{nome}, vai se foder, reverendíssima besta, você perdeu tudo.", textoComNome: "{nome}, vai se foder, reverendíssima besta, você perdeu tudo." },
-{ texto: "{nome}, que cagada absurda agora, desenhado pelo picasso.", textoComNome: "{nome}, que cagada absurda agora, desenhado palo picasso." },
+{ texto: "{nome}, que cagada absurda agora, desenhado pelo picássu.", textoComNome: "{nome}, que cagada absurda agora, desenhado palo picássu." },
 { texto: "{nome}, caralho, olha essa merda de rota.", textoComNome: "{nome}, caralho, olha essa merda de rota." },
 
 { texto: "{nome}, você conseguiu ferrar tudo de novo.", textoComNome: "{nome}, você conseguiu ferrar tudo de novo." },

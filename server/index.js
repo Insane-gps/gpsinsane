@@ -26,28 +26,66 @@ async function falarViaXtts(text, speed){
   throw err;
  }
 
+ const startedAt = Date.now();
+ console.log("XTTS REQUEST:", {
+  text,
+  speed,
+  xttsUrl: XTTS_URL,
+ });
+
  const localController = new AbortController();
- const localTimeout = setTimeout(() => localController.abort(), 60000);
- let resposta;
- try {
+
+const localTimeout = setTimeout(() => {
+  localController.abort();
+}, 120000);
+
+let resposta;
+
+try {
   resposta = await fetch(XTTS_URL, {
-   method:"POST",
-   headers:{ "Content-Type":"application/json" },
-   body: JSON.stringify({
-     text,
-     speed,
-   }),
-   signal: localController.signal,
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text,
+      language: "pt",
+      speed,
+    }),
+    signal: localController.signal,
   });
+} catch (error) {
+  const elapsedMs = Date.now() - startedAt;
+
+  if(error?.name === "AbortError"){
+   const err = new Error("xtts_timeout");
+   err.code = "XTTS_TIMEOUT";
+   err.detail = `XTTS timeout apos ${elapsedMs}ms`;
+   console.log("XTTS TIMEOUT:", { elapsedMs, xttsUrl: XTTS_URL });
+   throw err;
+  }
+
+  const err = new Error("xtts_offline");
+  err.code = "XTTS_OFFLINE";
+  err.detail = String(error?.message || error || "xtts offline");
+  console.log("XTTS OFFLINE:", { elapsedMs, xttsUrl: XTTS_URL, erro: err.detail });
+  throw err;
  } finally {
   clearTimeout(localTimeout);
  }
 
+ console.log("XTTS STATUS:", resposta.status);
+
  if(!resposta.ok){
   const detalhe = await resposta.text().catch(()=>"");
+  const elapsedMs = Date.now() - startedAt;
+  console.log("XTTS ERROR BODY:", detalhe);
+
   const err = new Error(`xtts_http_${resposta.status}`);
-  err.code = "xtts_http_error";
+  err.code = "XTTS_HTTP_ERROR";
+  err.xttsStatus = resposta.status;
   err.detail = detalhe;
+  err.elapsedMs = elapsedMs;
   throw err;
  }
 
@@ -58,13 +96,25 @@ async function falarViaXtts(text, speed){
   const audioBase64 = json?.audioBase64 || json?.audio || json?.base64;
   if(!audioBase64){
     const err = new Error("xtts_json_without_audio");
-    err.code = "xtts_json_without_audio";
+    err.code = "NO_AUDIO_BASE64";
+    err.detail = `Resposta JSON sem audioBase64. Chaves: ${Object.keys(json || {}).join(", ")}`;
+    err.elapsedMs = Date.now() - startedAt;
     throw err;
   }
+  console.log("XTTS TOTAL TIME MS:", Date.now() - startedAt);
   return audioBase64;
  }
 
  const arr = await resposta.arrayBuffer();
+ if(!arr || arr.byteLength === 0){
+  const err = new Error("xtts_binary_without_audio");
+  err.code = "NO_AUDIO_BASE64";
+  err.detail = "Resposta binaria vazia do XTTS";
+  err.elapsedMs = Date.now() - startedAt;
+  throw err;
+ }
+
+ console.log("XTTS TOTAL TIME MS:", Date.now() - startedAt);
  return Buffer.from(arr).toString("base64");
 }
 
@@ -165,6 +215,7 @@ async function enviarEmailFeedback(payload){
 // 🔊 ROTA DE VOZ
 // =============================
 app.post("/speak", async (req, res) => {
+  const startedAt = Date.now();
   const text = String(req.body?.text || "").trim();
   const speed = parseFloat(req.body?.speed) || 0.9;
 
@@ -177,7 +228,7 @@ app.post("/speak", async (req, res) => {
 
   try {
     const audioBase64 = await falarViaXtts(text, speed);
-    console.log("SPEAK OK");
+    console.log("SPEAK OK", { elapsedMs: Date.now() - startedAt });
 
     return res.json({
       ok: true,
@@ -186,10 +237,26 @@ app.post("/speak", async (req, res) => {
       audioBase64,
     });
   } catch (err) {
-    console.log("SPEAK ERROR", err?.message || err);
+    const elapsedMs = Date.now() - startedAt;
+    const errorCode = String(err?.code || "XTTS_ERROR");
+    const detail = String(err?.detail || err?.message || "tts_error");
+
+    console.log("SPEAK ERROR", {
+      error: errorCode,
+      detail,
+      xttsStatus: err?.xttsStatus || null,
+      elapsedMs,
+      xttsUrl: XTTS_URL,
+    });
+
     return res.status(500).json({
       ok: false,
-      erro: err?.code || err?.message || "tts_error",
+      error: errorCode,
+      erro: errorCode,
+      detail,
+      xttsStatus: err?.xttsStatus || null,
+      xttsUrl: XTTS_URL,
+      elapsedMs,
       audioBase64: null,
     });
   }

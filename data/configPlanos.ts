@@ -39,12 +39,10 @@ export type AssinaturaUsuario = {
 export const DATA_LANCAMENTO_APP = new Date("2026-04-23T00:00:00.000Z").getTime();
 
 // ─── PREMIUM FREE ─────────────────────────────────────────────
-// Plano gratuito para motoristas válido por 2 meses a partir do lançamento.
-export const DURACAO_PREMIUM_FREE_MESES = 2;
+// Plano gratuito para motoristas válido por 75 dias a partir do lançamento.
+export const DURACAO_PREMIUM_FREE_DIAS = 75;
 export const DATA_FIM_PREMIUM_FREE = (() => {
-  const data = new Date(DATA_LANCAMENTO_APP);
-  data.setUTCMonth(data.getUTCMonth() + DURACAO_PREMIUM_FREE_MESES);
-  return data.getTime();
+  return DATA_LANCAMENTO_APP + DURACAO_PREMIUM_FREE_DIAS * 24 * 60 * 60 * 1000;
 })();
 
 // ─── DURAÇÃO DAS FASES (em dias) ─────────────────────────────
@@ -60,7 +58,7 @@ export type TabelaPrecos = Record<FasePlano, PrecosPlanosPagos>;
 
 export const TABELA_PRECOS: TabelaPrecos = {
   lancamento: {
-    pro:     { BRL: 14.90, USD: 2.99,  EUR: 2.99  },
+    pro:     { BRL: 9.90, USD: 2.90,  EUR: 2.90  },
     premium: { BRL: 49.90, USD: 9.99,  EUR: 9.99  },
   },
   transicao: {
@@ -115,7 +113,7 @@ export const PERMISSOES_POR_PLANO: Record<PlanoUsuario, PermissoesPlano> = {
     podeAceitarOferta: false,
     podeGanharDinheiro: false,
   },
-  // Plano gratuito para motoristas durante os primeiros 2 meses de lançamento.
+  // Plano gratuito para motoristas durante os primeiros 75 dias de lançamento.
   // Libera funcionalidades de motorista mas bloqueia xingamentos e modo cômico.
   premium_free: {
     modoComico: false,

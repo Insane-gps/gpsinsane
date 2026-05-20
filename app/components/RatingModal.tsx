@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { addDoc, collection, doc, getDocs, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, doc, serverTimestamp } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
     Alert,
@@ -12,6 +12,11 @@ import {
     View
 } from "react-native";
 import { db } from "../../firebase";
+import {
+    addDocWithLog as addDoc,
+    getDocsWithLog as getDocs,
+    updateDocWithLog as updateDoc,
+} from "../../utils/firestoreDebug";
 
 type Props = {
   visivel: boolean;
@@ -42,7 +47,7 @@ export default function RatingModal({
       try {
         const snapshot = await getDocs(collection(db, "avaliacoesUsuarios"));
         const minhaAvaliacao: any = snapshot.docs
-          .map((doc) => ({ id: doc.id, ...doc.data() }))
+          .map((doc) => ({ id: doc.id, ...(doc.data() as any || {}) }))
           .find(
             (item: any) =>
               String(item?.avaliadoId) === String(usuarioAvaliadoId) &&

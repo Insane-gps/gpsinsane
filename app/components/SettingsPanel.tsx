@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Alert, Image, Keyboard, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Image, Modal, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import type { PlanoUsuario } from "../../data/configPlanos";
 import { IDIOMAS_DISPONIVEIS, type IdiomaId } from "../../data/idiomas";
 import { getVeiculoPorId, VEICULOS_CARROS, VEICULOS_MOTOS } from "../../data/veiculos";
@@ -74,22 +74,22 @@ export default function SettingsPanel({
       },
       en: {
         titulo: "Notice",
-        mensagem: "In comic mode, jokes and insults are translated into all languages. Some lines may sound odd outside the original language.",
+        mensagem: "In comic mode, jokes and insults are translated into all languages. Some lines may sound odd outside the original language. If you want, send jokes in your language for upcoming app updates and improvements.",
         ok: "Got it",
       },
       es: {
         titulo: "Aviso",
-        mensagem: "En modo cómico, los chistes e insultos se traducen a todos los idiomas. Algunas frases pueden sonar raras fuera del idioma original.",
+        mensagem: "En modo cómico, los chistes e insultos se traducen a todos los idiomas. Algunas frases pueden sonar raras fuera del idioma original. Si quieres, envía chistes en tu idioma para próximas actualizaciones y mejoras de la app.",
         ok: "Entendido",
       },
       fr: {
         titulo: "Avertissement",
-        mensagem: "En mode comique, les blagues et insultes sont traduites dans toutes les langues. Certaines phrases peuvent sembler étranges hors de la langue d'origine.",
+        mensagem: "En mode comique, les blagues et insultes sont traduites dans toutes les langues. Certaines phrases peuvent sembler étranges hors de la langue d'origine. Si vous voulez, envoyez des blagues dans votre langue pour les prochaines mises a jour et ameliorations de l'application.",
         ok: "Compris",
       },
       de: {
         titulo: "Hinweis",
-        mensagem: "Im Komikmodus werden Witze und Beleidigungen in alle Sprachen ubersetzt. Manche Sätze konnen außerhalb der Originalsprache ungewohnt klingen.",
+        mensagem: "Im Komikmodus werden Witze und Beleidigungen in alle Sprachen ubersetzt. Manche Sätze konnen außerhalb der Originalsprache ungewohnt klingen. Wenn du willst, sende Witze in deiner Sprache fur kommende Updates und Verbesserungen der App.",
         ok: "Verstanden",
       },
     };
@@ -103,7 +103,7 @@ export default function SettingsPanel({
       return;
     }
 
-    if (!modoComico) {
+    if (!modoComico && idiomaAtual !== "pt") {
       const aviso = avisoTraducaoModoComico(idiomaAtual);
       Alert.alert(aviso.titulo, aviso.mensagem, [{ text: aviso.ok }]);
     }
@@ -111,20 +111,14 @@ export default function SettingsPanel({
     setModoComico(!modoComico);
   }
 
-  if (!visivel) return null;
-
   return (
-    <View
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: "#111",
-        zIndex: 99999,
-      }}
-    >
+    <Modal visible={visivel} animationType="slide" onRequestClose={fechar} statusBarTranslucent>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: "#111",
+        }}
+      >
       <TouchableOpacity
         onPress={fechar}
         style={{
@@ -139,9 +133,10 @@ export default function SettingsPanel({
 
       <ScrollView
         style={{ flex: 1, paddingHorizontal: 20 }}
-        contentContainerStyle={{ paddingTop: 70, paddingBottom: 120, flexGrow: 1 }}
+        contentContainerStyle={{ paddingTop: 70, paddingBottom: 120 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        nestedScrollEnabled
         decelerationRate="normal"
         overScrollMode="always"
         showsVerticalScrollIndicator={true}
@@ -158,25 +153,27 @@ export default function SettingsPanel({
           ⚙️ {textos.configuracoes}
         </Text>
 
-        {mostrarBotaoPremiumTopo && (
-          <TouchableOpacity
-            onPress={() => {
-              Keyboard.dismiss();
-              onPressBotaoPremiumTopo?.();
-            }}
-            style={{
-              backgroundColor: "#d4a017",
-              paddingVertical: 12,
-              borderRadius: 10,
-              alignItems: "center",
-              marginBottom: 18,
-            }}
-          >
-            <Text style={{ color: "#111", fontWeight: "900", fontSize: 12 }}>
-              {textoBotaoPremiumTopo}
-            </Text>
-          </TouchableOpacity>
-        )}
+       {/* 
+{mostrarBotaoPremiumTopo && (
+  <TouchableOpacity
+    onPress={() => {
+      Keyboard.dismiss();
+      onPressBotaoPremiumTopo?.();
+    }}
+    style={{
+      backgroundColor: "#d4a017",
+      paddingVertical: 12,
+      borderRadius: 10,
+      alignItems: "center",
+      marginBottom: 18,
+    }}
+  >
+    <Text style={{ color: "#111", fontWeight: "900", fontSize: 12 }}>
+      {textoBotaoPremiumTopo}
+    </Text>
+  </TouchableOpacity>
+)}
+*/}
 
         <Text style={{ color: "#888", marginBottom: 10 }}>{textos?.plano || "Plano"}</Text>
 
@@ -434,6 +431,7 @@ export default function SettingsPanel({
           </ScrollView>
         </View>
       )}
-    </View>
+      </View>
+    </Modal>
   );
 }

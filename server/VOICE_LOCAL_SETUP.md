@@ -1,9 +1,8 @@
-# Voz local (sem ElevenLabs) — preparo
+# Voz XTTS (Contabo) — preparo
 
 Status atual:
-- O servidor está em modo duplo por variável de ambiente.
-- Providers disponíveis: `eleven`, `local`, `auto`.
-- Modo `auto`: tenta local primeiro (quando `LOCAL_VOICE_SAMPLE` está definido) e cai para Eleven se falhar.
+- O servidor usa apenas XTTS.
+- O endpoint `/speak` chama somente o endpoint XTTS configurado.
 
 ## 1) Quando você tiver sua voz
 Você vai precisar de uma amostra limpa da sua voz (`.wav`, 16kHz/22kHz, sem ruído):
@@ -18,21 +17,13 @@ Sugestão prática: Coqui XTTS-v2 (local ou VPS própria).
 No `server/.env`:
 
 ```env
-VOICE_PROVIDER=eleven
-VOICE_FALLBACK=1
-
-ELEVEN_API_KEY=...
-ELEVEN_VOICE_ID=...
-
-LOCAL_TTS_URL=http://127.0.0.1:8020/tts
-LOCAL_VOICE_SAMPLE=C:\\vozes\\minha-voz.wav
-LOCAL_LANGUAGE=pt
+XTTS_URL=http://127.0.0.1:8020/tts
+XTTS_VOICE_SAMPLE=C:\\vozes\\minha-voz.wav
+XTTS_LANGUAGE=pt
 ```
 
-Troca rápida de modos:
-- `VOICE_PROVIDER=eleven` -> usa Eleven
-- `VOICE_PROVIDER=local` -> usa local
-- `VOICE_PROVIDER=auto` -> local preferencial + fallback
+Compatibilidade legada:
+- `LOCAL_TTS_URL`, `LOCAL_VOICE_SAMPLE` e `LOCAL_LANGUAGE` ainda funcionam como fallback de leitura.
 
 ## 4) Rodar servidor
 No terminal do `server/`:
@@ -43,8 +34,8 @@ Windows PowerShell:
 node index.js
 ```
 
-## 5) Contrato do endpoint local
-O servidor envia para o `LOCAL_TTS_URL` este JSON:
+## 5) Contrato do endpoint XTTS
+O servidor envia para o `XTTS_URL` este JSON:
 
 ```json
 {

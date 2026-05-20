@@ -1,8 +1,9 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons"
-import { collection, getDocs } from "firebase/firestore"
+import { collection } from "firebase/firestore"
 import React, { useEffect, useState } from "react"
 import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native"
 import { db } from "../../firebase"
+import { getDocsWithLog as getDocs } from "../../utils/firestoreDebug"
 
 type Props={
   ofertas:any[]
@@ -181,7 +182,7 @@ export default function ProcurarScreen({
 
   // Função para decidir se mostra endereço
   function podeVerEndereco(item:any): boolean {
-    if (isPro) return true;
+    if (isPro || String(item?.tipo || "") === "carona_oferecida") return true;
     if (item?.criadorId === usuarioId) return true;
     // Se o usuário está entre os solicitantes aceitos
     if (Array.isArray(item?.solicitacoes) && item.solicitacoes.map((s:any)=>String(s)).includes(String(usuarioId))) return true;
@@ -207,6 +208,8 @@ export default function ProcurarScreen({
 
   const ofertasOutrasTodas = ofertas.filter((o:any)=>{
     if(o.criadorId===usuarioId) return false
+
+    if(!isPro && String(o?.tipo || "") !== "carona_oferecida") return false
 
     const statusValido =
       String(o?.status || "ativa") === "ativa" ||
@@ -330,7 +333,13 @@ export default function ProcurarScreen({
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={()=>setAbaInterna("minhas")}
+            onPress={()=>{
+              if(!isPro){
+                onRequestPro();
+                return;
+              }
+              setAbaInterna("minhas");
+            }}
             style={{
               flex:1,
               backgroundColor:abaInterna==="minhas"?"#16a34a":"#1a1a2e",
@@ -441,6 +450,7 @@ export default function ProcurarScreen({
                 String(item?.status || "") === "aceita" &&
                 String(item?.aceitaPor || "") === String(usuarioId);
               const bloqueadoPorPlanoPro = item.tipo !== "carona_oferecida" && !isPro;
+              const podeUsarRecursosOferta = isPro || item.tipo === "carona_oferecida";
               const ofertaBloqueadaParaSolicitacao =
                 item.status === "aceita" ||
                 item.status === "cancelada" ||
@@ -483,45 +493,6 @@ export default function ProcurarScreen({
                 return base;
               })();
               const resumoMotorista = avaliacoesResumo[String(item?.criadorId || "")] || null;
-
-              if(!isPro){
-                return(
-                  <View
-                    key={index}
-                    style={{
-                      backgroundColor:"#111",
-                      padding:15,
-                      borderRadius:12,
-                      marginBottom:15,
-                      borderWidth:1,
-                      borderColor:"#1a1a2e"
-                    }}
-                  >
-                      <Text style={{color:"#fff",fontSize:16,fontWeight:"bold"}}>
-                        {tt("ofertaExclusivaPro", "Oferta Exclusiva Premium")}
-                      </Text>
-                    <Text style={{color:"#22c55e",marginTop:10,fontWeight:"bold",fontSize:21}}>
-                      R$ {item.valor}
-                    </Text>
-                    <Text style={{color:"#cbd5e1",marginTop:8,fontSize:14,lineHeight:20}}>
-                      {tt("fraseProUpsell", "Tá economizando trocado enquanto outros tão lucrando. Premium é o completo.")}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={onRequestPro}
-                      style={{
-                        marginTop:12,
-                        alignSelf:"flex-start",
-                        backgroundColor:"#16a34a",
-                        paddingHorizontal:14,
-                        paddingVertical:9,
-                        borderRadius:10
-                      }}
-                    >
-                      <Text style={{color:"#052e16",fontWeight:"800",fontSize:13}}>{tt("tornarPro", "Tornar Premium")}</Text>
-                    </TouchableOpacity>
-                  </View>
-                )
-              }
 
               return(
                 <View
@@ -583,14 +554,14 @@ export default function ProcurarScreen({
                       />
                     </View>
                     <Text style={{color:"#fff",fontSize:16,fontWeight:"bold",flex:1}}>
-                      {isPro ? item.nomeOuDescricao : "Oferta protegida"}
+                      {podeUsarRecursosOferta ? item.nomeOuDescricao : "Oferta protegida"}
                     </Text>
                     {(item.status === "aceita" || item.status === "em_andamento") && (
                       <MaterialCommunityIcons name="lock" size={16} color="#666"/>
                     )}
                   </View>
 
-                  {isPro && (
+                  {podeUsarRecursosOferta && (
                     <TouchableOpacity
                       onPress={()=>openProfile && openProfile(item?.criadorId, item)}
                       style={{
@@ -634,15 +605,15 @@ export default function ProcurarScreen({
 
                   {item.tipo==="carona_oferecida" ? (
                     <Text style={{color:vagasMin>0?"#86efac":"#f87171",marginTop:2}}>
-                      {isPro ? `🪑 ${vagasMin} ${tt("de", "de")} ${item.quantidadePessoas} ${tt("vagasLivres", "vaga(s) livre(s)")}` : tt("detalhesApenasPro", "Detalhes visíveis apenas para PREMIUM")}
+                      {podeUsarRecursosOferta ? `🪑 ${vagasMin} ${tt("de", "de")} ${item.quantidadePessoas} ${tt("vagasLivres", "vaga(s) livre(s)")}` : tt("detalhesApenasPro", "Detalhes visíveis apenas para PREMIUM")}
                     </Text>
                   ) : (
                     <Text style={{color:"#aaa",marginTop:2}}>
-                      {isPro ? (item.tipo==="carona_solicitada" ? item.quantidadePessoas+" "+tt("pessoas", "pessoas") : tt("solicitarEntrega", "Solicitar entrega")) : tt("detalhesApenasPro", "Detalhes visíveis apenas para PREMIUM")}
+                      {podeUsarRecursosOferta ? (item.tipo==="carona_solicitada" ? item.quantidadePessoas+" "+tt("pessoas", "pessoas") : tt("solicitarEntrega", "Solicitar entrega")) : tt("detalhesApenasPro", "Detalhes visíveis apenas para PREMIUM")}
                     </Text>
                   )}
 
-                  {isPro && item.tipo === "carona_oferecida" && participantes.length > 0 && (
+                  {podeUsarRecursosOferta && item.tipo === "carona_oferecida" && participantes.length > 0 && (
                     <View style={{marginTop:8}}>
                       <View style={{flexDirection:"row",alignItems:"center"}}>
                         {participantes.slice(0,4).map((p:any, i:number)=>(
@@ -696,7 +667,7 @@ export default function ProcurarScreen({
                     </Text>
                   )}
 
-                  {isPro && !!item.observacao && (
+                  {podeUsarRecursosOferta && !!item.observacao && (
                     <Text style={{color:"#cbd5e1",marginTop:4}} numberOfLines={2}>
                       {tt("obs", "Obs")}: {item.observacao}
                     </Text>
@@ -737,11 +708,11 @@ export default function ProcurarScreen({
                     </View>
                   )}
 
-                  {isPro && Array.isArray(item.paradas) && item.paradas.length > 0 && (
+                  {podeUsarRecursosOferta && Array.isArray(item.paradas) && item.paradas.length > 0 && (
                     <Text style={{color:"#7dd3fc", marginTop:6}}>{item.paradas.length} parada(s) intermediária(s)</Text>
                   )}
 
-                  {isPro && !!minhaReservaAtiva && (
+                  {podeUsarRecursosOferta && !!minhaReservaAtiva && (
                     <View style={{backgroundColor:"#0a1a2e",padding:10,borderRadius:8,marginTop:10}}>
                       <Text style={{color:"#93c5fd",fontWeight:"bold",marginBottom:4}}>🎫 {tt("minhaReserva", "Minha reserva")}</Text>
                       <Text style={{color:"#94a3b8",fontSize:12}}>
@@ -771,7 +742,7 @@ export default function ProcurarScreen({
                     </View>
                   )}
 
-                  {isPro && item.tipo === "carona_oferecida" && reservandoId===item.id && !minhaReservaAtiva && (
+                  {podeUsarRecursosOferta && item.tipo === "carona_oferecida" && reservandoId===item.id && !minhaReservaAtiva && (
                     <View style={{backgroundColor:"#0a1a2e",borderRadius:10,padding:10,marginTop:10}}>
                       <Text style={{color:"#93c5fd",fontWeight:"bold",marginBottom:8}}>{tt("selecionarTrecho", "Selecionar trecho")}</Text>
                       <Text style={{color:"#64748b",fontSize:12,marginBottom:8}}>
@@ -880,7 +851,7 @@ export default function ProcurarScreen({
                     </View>
                   )}
 
-                  {isPro && (
+                  {podeUsarRecursosOferta && (
                   <View style={{flexDirection:"row",marginTop:10}}>
                     <TouchableOpacity
                       onPress={async () => {
@@ -1107,7 +1078,20 @@ export default function ProcurarScreen({
           </View>
         )}
 
-        {abaInterna==="minhas" && (
+        {abaInterna==="minhas" && !isPro && (
+          <View style={{backgroundColor:"#111",borderWidth:1,borderColor:"#1a1a2e",borderRadius:12,padding:16}}>
+            <Text style={{color:"#fff",fontSize:16,fontWeight:"bold"}}>{tt("minhasSomentePremium", "A aba Minhas e para Premium")}</Text>
+            <Text style={{color:"#cbd5e1",marginTop:8}}>{tt("minhasSomentePremiumDesc", "No plano free/pro voce pode buscar caronas para contratar. Para publicar e gerenciar suas ofertas, ative o Premium.")}</Text>
+            <TouchableOpacity
+              onPress={onRequestPro}
+              style={{marginTop:12,alignSelf:"flex-start",backgroundColor:"#16a34a",paddingHorizontal:14,paddingVertical:9,borderRadius:10}}
+            >
+              <Text style={{color:"#052e16",fontWeight:"800",fontSize:13}}>{tt("tornarPro", "Tornar Premium")}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {abaInterna==="minhas" && isPro && (
           <View>
             {ofertas.filter((o:any)=>
               o.criadorId===usuarioId &&

@@ -150,7 +150,7 @@ const [valorOferta,setValorOferta]=React.useState("")
 const [mensagemSucesso, setMensagemSucesso] = useState("")
 const [criandoOferta, setCriandoOferta] = useState(false)
 const ofertaEditadaRef = useRef<string | null>(null)
-const tipoRequerPro = tipoSelecionado === "carona_oferecida"
+const tipoRequerPro = true
 
 const MAX_OBSERVACAO_CHARS = 280
 
@@ -494,7 +494,7 @@ async function salvarOfertaFormulario(){
     return;
   }
 
-  const tipoRequerPro = tipoSelecionado === "carona_oferecida"
+  const tipoRequerPro = true
   if(tipoRequerPro && !isPro){
     onRequestPro();
     return;
@@ -893,7 +893,13 @@ paddingBottom:220
         marginBottom:20
       }}>
         <TouchableOpacity
-         onPress={()=>setTipoSelecionado("carona_solicitada")}
+         onPress={()=>{
+  if(!isPro){
+    onRequestPro();
+    return;
+  }
+  setTipoSelecionado("carona_solicitada")
+}}
          style={{
   flex:1,
   backgroundColor: tipoSelecionado === "carona_solicitada" ? "#2563eb" : "#222",
@@ -936,7 +942,13 @@ paddingBottom:220
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={()=>setTipoSelecionado("entrega")}
+          onPress={()=>{
+  if(!isPro){
+    onRequestPro();
+    return;
+  }
+  setTipoSelecionado("entrega")
+}}
           style={{
             flex:1,
             backgroundColor: tipoSelecionado === "entrega" ? "#f97316" : "#222",
@@ -956,7 +968,7 @@ paddingBottom:220
       {!isPro && (
         <View style={{marginTop:-8,marginBottom:12}}>
           <Text style={{color:"#f59e0b",marginBottom:8}}>
-            {tt("planoFreeDescricao", "Plano free: solicitar carona e solicitar entrega. Para oferecer carona, ative o PREMIUM.")}
+            {tt("planoFreeDescricao", "Plano free/pro: visualiza caronas para contratar. Para publicar ofertas, ative o PREMIUM.")}
           </Text>
           <TouchableOpacity
             onPress={onRequestPro}
@@ -1463,7 +1475,13 @@ paddingVertical:10
 </TouchableOpacity>
 
 <TouchableOpacity
-  onPress={()=>setAbaOfertas("oferecer")}
+  onPress={()=>{
+    if(!isPro){
+      onRequestPro();
+      return;
+    }
+    setAbaOfertas("oferecer")
+  }}
   style={{flex:1,alignItems:"center",justifyContent:"center",paddingVertical:2}}
 >
 <MaterialCommunityIcons name="trophy-award" size={24} color="#FFD700" />

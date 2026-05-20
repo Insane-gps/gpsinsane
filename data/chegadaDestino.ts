@@ -1,16 +1,16 @@
 export type IdiomaChegadaId = "pt" | "en" | "es" | "fr" | "de";
 
 export const LINHAS_CHEGADA_DESTINO_PT: string[] = [
-  "Chegamos no destino.",
-  "Voce chegou ao destino.",
-  "Pronto, chegou.",
-  "Fim da rota.",
-  "Destino alcancado.",
+  "uffa, chegamos no destino.",
+  "Voce chegou ao destino animal.",
+  "Pronto, chegou, graças ao Pai Eterno.",
+  "Uffa, finalmente chegamos.",
+  "Destino alcancado, depois de um caminho ousado.",
   "Chegou. Ate que enfim.",
   "Parou no lugar certo. Milagre util.",
   "Destino alcancado sem estragar tudo.",
-  "Chegou certo. Vou ate anotar a data.",
-  "Finalmente voce acertou o endereco.",
+  "Chegou certo. Vou ate anotar a data, alelúia!",
+  "Finalmente voce acertou o endereco, uffa.",
   "Chegou no destino. Nao era impossivel entao.",
   "Pronto. Hoje voce venceu as ruas.",
   "Destino confirmado. O mapa agradece o esforco.",
@@ -114,7 +114,7 @@ export const LINHAS_CHEGADA_DESTINO_PT_PRO: string[] = LINHAS_CHEGADA_DESTINO_PT
 );
 
 export const LINHAS_CHEGADA_DESTINO_PT_COM_NOME: string[] = [
-  "{nome}, voce chegou ao destino.",
+  "{nome}, voce chegou ao destino, graças ao Pai Eterno.",
   "{nome}, pronto, chegou sem estragar o final.",
   "{nome}, destino alcancado. Ate que enfim.",
   "{nome}, voce acertou o endereco. Momento raro.",

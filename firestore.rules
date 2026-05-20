@@ -1,0 +1,162 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwnReportCreate() {
+      return isSignedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status == "pendente"
+        && request.resource.data.tipo in ["usuario", "mensagem", "imagem", "audio"]
+        && request.resource.data.motivo in ["spam", "nudez", "assedio", "violencia", "golpe", "linguagem_ofensiva", "outro"];
+    }
+
+    function isOwnBlockCreate() {
+      return isSignedIn()
+        && request.resource.data.blockerId == request.auth.uid
+        && request.resource.data.blockedId is string;
+    }
+
+    function isOwnTermsDoc(userId) {
+      return isSignedIn()
+        && userId == request.auth.uid;
+    }
+
+    function hasProtectedBillingFields(data) {
+      return data.keys().hasAny([
+        "plano",
+        "assinaturaAtiva",
+        "assinaturaOrigem",
+        "assinaturaStatus",
+        "assinaturaAtualizadaEm",
+        "pagamentoProvider",
+        "pagamentoId"
+      ]);
+    }
+
+    function billingFieldsUnchanged() {
+      return (
+        request.resource.data.plano == resource.data.plano &&
+        request.resource.data.assinaturaAtiva == resource.data.assinaturaAtiva &&
+        request.resource.data.assinaturaOrigem == resource.data.assinaturaOrigem &&
+        request.resource.data.assinaturaStatus == resource.data.assinaturaStatus &&
+        request.resource.data.assinaturaAtualizadaEm == resource.data.assinaturaAtualizadaEm &&
+        request.resource.data.pagamentoProvider == resource.data.pagamentoProvider &&
+        request.resource.data.pagamentoId == resource.data.pagamentoId
+      );
+    }
+
+    // =========================
+    // Colecoes existentes (mantidas para nao quebrar o app atual)
+    // =========================
+    match /usuarios/{docId} {
+      allow read: if true;
+
+      // Cliente autenticado pode criar/atualizar apenas o proprio documento,
+      // sem ativar plano/assinatura por conta propria.
+      allow create: if isSignedIn()
+        && docId == request.auth.uid
+        && !hasProtectedBillingFields(request.resource.data);
+
+      allow update: if isSignedIn()
+        && docId == request.auth.uid
+        && billingFieldsUnchanged();
+
+      allow delete: if false;
+    }
+
+    match /motoristas/{docId} {
+      allow read, write: if true;
+    }
+
+    match /feedbackUsuarios/{docId} {
+      allow read, write: if true;
+    }
+
+    match /denuncias/{docId} {
+      allow read, write: if true;
+    }
+
+    match /avaliacoesUsuarios/{docId} {
+      allow read, write: if true;
+    }
+
+    match /perfisUsuarios/{docId} {
+      allow read, write: if true;
+    }
+
+    match /reports_trajeto/{docId} {
+      allow read, write: if true;
+    }
+
+    match /chat/{docPath=**} {
+      allow read, write: if true;
+    }
+
+    match /ofertas/{ofertaId} {
+      allow read, write: if true;
+
+      match /mensagens/{mensagemId} {
+        // Mantem o funcionamento atual do chat.
+        allow read, create, delete: if true;
+
+        // Regra temporaria para nao quebrar o chat atual.
+        // Quando o fluxo de update estiver mapeado por completo, pode ser endurecida.
+        allow update: if true;
+      }
+    }
+
+    // =========================
+    // Novas colecoes de moderacao (protegidas)
+    // =========================
+    match /reports/{reportId} {
+      // Usuario autenticado so cria denuncia com reporterId == auth.uid.
+      allow create: if isOwnReportCreate();
+
+      // Leitura limitada a quem denunciou.
+      allow read: if isSignedIn() && resource.data.reporterId == request.auth.uid;
+
+      // Nao permitir alteracoes/delecao pelo cliente.
+      allow update, delete: if false;
+    }
+
+    match /blockedUsers/{blockId} {
+      // Usuario autenticado so cria bloqueio com blockerId == auth.uid.
+      allow create: if isOwnBlockCreate();
+
+      // Leitura apenas para envolvidos no bloqueio.
+      allow read: if isSignedIn() && (
+        resource.data.blockerId == request.auth.uid
+        || resource.data.blockedId == request.auth.uid
+      );
+
+      // Permite remover apenas o proprio bloqueio.
+      allow delete: if isSignedIn() && resource.data.blockerId == request.auth.uid;
+
+      // Sem update parcial no cliente.
+      allow update: if false;
+    }
+
+    match /chatTermsAccepted/{userId} {
+      // Usuario autenticado so pode criar/ler/atualizar o proprio aceite.
+      allow create: if isOwnTermsDoc(userId)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.version == "chat_terms_v1";
+
+      allow read: if isOwnTermsDoc(userId);
+
+      allow update: if isOwnTermsDoc(userId)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.version == "chat_terms_v1";
+
+      allow delete: if false;
+    }
+
+    // Fallback
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

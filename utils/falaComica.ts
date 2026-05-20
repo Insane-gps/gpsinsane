@@ -45,7 +45,7 @@ export function obterNomeFalavelUsuario(valor: any): string | null {
   const partes = somenteLetras.split(" ").filter((item) => item.length >= 2);
   if (!partes.length) return null;
 
-  const nomeBase = partes.slice(0, 2).join(" ");
+  const nomeBase = partes[0] || "";
   if (nomeBase.length < 2) return null;
 
   const nomeNormalizado = normalizarComparacao(nomeBase);

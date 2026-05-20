@@ -69,6 +69,21 @@ Notes:
 - Firebase initialization in `firebase.ts` now prioritizes `EXPO_PUBLIC_FIREBASE_*` and falls back to local config.
 - In production profile, test plan-cycle button is disabled by env.
 
+## Google Login (Mobile Expo)
+
+To enable Google login on mobile with Firebase Auth, define these env vars locally and in EAS:
+
+- `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`
+- `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`
+- `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` (optional if not building iOS now)
+- `EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID` (optional fallback for Expo Go)
+
+Firebase checklist:
+
+- Enable Google provider in Firebase Authentication > Sign-in method.
+- Add package/bundle IDs in Google Cloud OAuth client config.
+- Keep app scheme `gpsclean` in `app.json` for redirect handling.
+
 ## Join the community
 
 Join our community of developers creating universal apps.

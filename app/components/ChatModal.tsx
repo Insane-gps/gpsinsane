@@ -12,7 +12,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as MediaLibrary from 'expo-media-library';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, serverTimestamp } from 'firebase/firestore';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
@@ -36,6 +36,11 @@ import {
 import { State as GestureState, PinchGestureHandler } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from "../../firebase";
+import {
+    getDocWithLog as getDoc,
+    onSnapshotWithLog as onSnapshot,
+    setDocWithLog as setDoc,
+} from '../../utils/firestoreDebug';
 
 type Props = {
   chatVisivel: boolean;
@@ -52,6 +57,11 @@ type Props = {
   aceitarSolicitacaoChat?: (mensagem: any) => Promise<void> | void;
   recusarSolicitacaoChat?: (mensagem: any) => Promise<void> | void;
   openProfile?: (usuarioPerfilId:any, ofertaParaAceite?:any)=>void;
+  onReportMessage?: (payload: { motivo: string; descricao?: string; message?: any; reportedUserId?: string }) => Promise<void> | void;
+  onBlockUser?: (userId: string) => Promise<void> | void;
+  onUnblockUser?: (userId: string) => Promise<void> | void;
+  onModerateMessage?: (mensagem: any, acao: 'ocultar' | 'restaurar' | 'excluir') => Promise<void> | void;
+  chatBlockMeta?: { outroId?: string; euBloqueei?: boolean; fuiBloqueado?: boolean };
 };
 
 export default function ChatModal({
@@ -69,6 +79,11 @@ export default function ChatModal({
   aceitarSolicitacaoChat = () => {},
   recusarSolicitacaoChat = () => {},
   openProfile = () => {},
+  onReportMessage = async () => {},
+  onBlockUser = async () => {},
+  onUnblockUser = async () => {},
+  onModerateMessage = async () => {},
+  chatBlockMeta = {},
 }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
@@ -94,6 +109,17 @@ export default function ChatModal({
   const audioOperacaoEmAndamentoRef = useRef(false);
   // Rastreamento de status online do outro usuário
   const [outroUsuarioOnline, setOutroUsuarioOnline] = useState(false);
+  const [termosChatAceitos, setTermosChatAceitos] = useState(false);
+  const [termosModalVisivel, setTermosModalVisivel] = useState(false);
+  const [aceitandoTermos, setAceitandoTermos] = useState(false);
+  const [reportModalVisivel, setReportModalVisivel] = useState(false);
+  const [mensagemSelecionadaReport, setMensagemSelecionadaReport] = useState<any | null>(null);
+  const [reportDescricaoLivre, setReportDescricaoLivre] = useState('');
+  const [reportMotivoSelecionado, setReportMotivoSelecionado] = useState('');
+  const [reportEnviando, setReportEnviando] = useState(false);
+
+  const CHAT_TERMS_VERSION = 'chat_terms_v1';
+  const REPORT_MOTIVOS = ['Spam', 'Nudez', 'Assédio', 'Violência', 'Golpe', 'Linguagem ofensiva', 'Outro'];
 
   const FUNDO_PADRAO_URI = require('../../assets/images/fundos/prédios.jpeg');
   const FUNDO_ENTREGA_URI = require('../../assets/images/fundos/entrega.jpeg');
@@ -142,6 +168,79 @@ export default function ChatModal({
   useEffect(() => {
     setSolicitacaoEnviadaAgora(false);
   }, [chatOferta?.id]);
+
+  useEffect(() => {
+    let ativo = true;
+
+    async function carregarTermosChat() {
+      if (!chatVisivel || !usuarioId) {
+        if (ativo) {
+          setTermosChatAceitos(false);
+          setTermosModalVisivel(false);
+        }
+        return;
+      }
+
+      try {
+        const chaveLocal = `chat_terms_accept_${CHAT_TERMS_VERSION}_${String(usuarioId)}`;
+        const localAceite = await AsyncStorage.getItem(chaveLocal);
+        let aceito = localAceite === 'sim';
+
+        if (!aceito) {
+          const remoto = await getDoc(doc(db, 'chatTermsAccepted', String(usuarioId)));
+          const dados: any = remoto.exists() ? remoto.data() : {};
+          if (dados?.userId === String(usuarioId) && String(dados?.version || '') === CHAT_TERMS_VERSION) {
+            aceito = true;
+            await AsyncStorage.setItem(chaveLocal, 'sim');
+          }
+        }
+
+        if (!ativo) return;
+        setTermosChatAceitos(aceito);
+        setTermosModalVisivel(!aceito);
+      } catch {
+        if (!ativo) return;
+        setTermosChatAceitos(false);
+        setTermosModalVisivel(true);
+      }
+    }
+
+    carregarTermosChat();
+
+    return () => {
+      ativo = false;
+    };
+  }, [chatVisivel, usuarioId]);
+
+  async function aceitarTermosChatObrigatorio() {
+    if (aceitandoTermos) return;
+    setAceitandoTermos(true);
+
+    try {
+      const uidLocal = String(usuarioId || 'anon_chat').trim() || 'anon_chat';
+      const chaveLocal = `chat_terms_accept_${CHAT_TERMS_VERSION}_${uidLocal}`;
+      await AsyncStorage.setItem(chaveLocal, 'sim');
+
+      setTermosChatAceitos(true);
+      setTermosModalVisivel(false);
+
+      // Sincronizacao remota e opcional: falhas de permissao/rede nao devem bloquear o chat.
+      if (usuarioId) {
+        setDoc(doc(db, 'chatTermsAccepted', String(usuarioId)), {
+          userId: String(usuarioId),
+          acceptedAt: serverTimestamp(),
+          version: CHAT_TERMS_VERSION,
+        }, { merge: true }).catch((error) => {
+          console.log('Aviso: nao foi possivel sincronizar aceite remoto dos termos do chat:', error);
+        });
+      }
+    } catch (error) {
+      console.log('Erro ao salvar aceite de termos do chat:', error);
+      Alert.alert('Erro', 'Não foi possível salvar o aceite dos termos do chat.');
+    } finally {
+      setAceitandoTermos(false);
+    }
+  }
 
   const outroUsuarioId = useMemo(() => {
     const eu = String(usuarioId || '').trim();
@@ -839,6 +938,158 @@ export default function ChatModal({
     return autorId || 'Usuário';
   }
 
+  async function confirmarBloqueioUsuario(userId: string) {
+    const alvo = String(userId || '').trim();
+    if (!alvo || alvo === String(usuarioId || '')) return;
+    Alert.alert('Bloquear usuário', 'Você não receberá mensagens deste usuário e não poderá enviar mensagens para ele.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Bloquear',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await onBlockUser(alvo);
+          } catch (error) {
+            console.log('Erro ao bloquear usuário:', error);
+            Alert.alert('Erro', 'Não foi possível bloquear o usuário.');
+          }
+        },
+      },
+    ]);
+  }
+
+  async function confirmarDesbloqueioUsuario(userId: string) {
+    const alvo = String(userId || '').trim();
+    if (!alvo) return;
+    Alert.alert('Desbloquear usuário', 'Deseja desbloquear este usuário para voltar a conversar?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Desbloquear',
+        onPress: async () => {
+          try {
+            await onUnblockUser(alvo);
+          } catch (error) {
+            console.log('Erro ao desbloquear usuário:', error);
+            Alert.alert('Erro', 'Não foi possível desbloquear o usuário.');
+          }
+        },
+      },
+    ]);
+  }
+
+  function abrirModalDenunciaMensagem(mensagem: any) {
+    setMensagemSelecionadaReport(mensagem);
+    setReportMotivoSelecionado('');
+    setReportDescricaoLivre('');
+    setReportModalVisivel(true);
+  }
+
+  async function enviarDenunciaMensagem() {
+    if (!mensagemSelecionadaReport || !reportMotivoSelecionado || reportEnviando) return;
+    setReportEnviando(true);
+    try {
+      await onReportMessage({
+        motivo: reportMotivoSelecionado,
+        descricao: reportMotivoSelecionado === 'Outro' ? reportDescricaoLivre : '',
+        message: mensagemSelecionadaReport,
+        reportedUserId: String(mensagemSelecionadaReport?.autor || ''),
+      });
+      setReportModalVisivel(false);
+      setMensagemSelecionadaReport(null);
+      Alert.alert('Denúncia enviada', 'Sua denúncia foi registrada para análise.');
+    } catch (error) {
+      console.log('Erro ao enviar denúncia:', error);
+      Alert.alert('Erro', 'Não foi possível enviar a denúncia agora.');
+    } finally {
+      setReportEnviando(false);
+    }
+  }
+
+  function abrirAcoesMensagem(mensagem: any) {
+    const autorId = String(mensagem?.autor || '').trim();
+    const eu = String(usuarioId || '').trim();
+    const possoBloquear = !!autorId && autorId !== eu;
+    const bloqueadoPorMim = chatBlockMeta?.euBloqueei && String(chatBlockMeta?.outroId || '') === autorId;
+    const souCriadorDaOferta = String(chatOferta?.criadorId || '') === eu;
+
+    const abrirAcoesSeguranca = () => {
+      const acoesSeguranca: Array<{ text: string; style?: 'default' | 'cancel' | 'destructive'; onPress?: () => void }> = [
+        {
+          text: 'Denunciar mensagem',
+          onPress: () => abrirModalDenunciaMensagem(mensagem),
+        },
+      ];
+
+      if (possoBloquear) {
+        if (bloqueadoPorMim) {
+          acoesSeguranca.push({ text: 'Desbloquear usuário', onPress: () => confirmarDesbloqueioUsuario(autorId) });
+        } else {
+          acoesSeguranca.push({ text: 'Bloquear usuário', style: 'destructive', onPress: () => confirmarBloqueioUsuario(autorId) });
+        }
+      }
+
+      acoesSeguranca.push({ text: 'Cancelar', style: 'cancel' });
+      Alert.alert('Ações de segurança', 'Escolha uma ação', acoesSeguranca);
+    };
+
+    const abrirAcoesModeracao = () => {
+      const acoesModeracao: Array<{ text: string; style?: 'default' | 'cancel' | 'destructive'; onPress?: () => void }> = [];
+
+      if (mensagem?.hiddenByModeration) {
+        acoesModeracao.push({ text: 'Restaurar mensagem', onPress: () => onModerateMessage(mensagem, 'restaurar') });
+      } else {
+        acoesModeracao.push({ text: 'Ocultar por moderação', onPress: () => onModerateMessage(mensagem, 'ocultar') });
+      }
+
+      acoesModeracao.push({ text: 'Excluir como admin', style: 'destructive', onPress: () => onModerateMessage(mensagem, 'excluir') });
+      acoesModeracao.push({ text: 'Cancelar', style: 'cancel' });
+      Alert.alert('Ações de moderação', 'Escolha uma ação', acoesModeracao);
+    };
+
+    // No Android, Alert com muitos botões pode ocultar o botão de cancelar.
+    // Dividimos em submenus curtos para garantir botão "Cancelar" visível.
+    if (Platform.OS === 'android' && souCriadorDaOferta) {
+      Alert.alert('Ações da mensagem', 'Escolha uma categoria', [
+        { text: 'Segurança', onPress: abrirAcoesSeguranca },
+        { text: 'Moderação', onPress: abrirAcoesModeracao },
+        { text: 'Cancelar', style: 'cancel' },
+      ]);
+      return;
+    }
+
+    if (Platform.OS === 'android') {
+      abrirAcoesSeguranca();
+      return;
+    }
+
+    const acoes: Array<{ text: string; style?: 'default' | 'cancel' | 'destructive'; onPress?: () => void }> = [
+      {
+        text: 'Denunciar mensagem',
+        onPress: () => abrirModalDenunciaMensagem(mensagem),
+      },
+    ];
+
+    if (possoBloquear) {
+      if (bloqueadoPorMim) {
+        acoes.push({ text: 'Desbloquear usuário', onPress: () => confirmarDesbloqueioUsuario(autorId) });
+      } else {
+        acoes.push({ text: 'Bloquear usuário', style: 'destructive', onPress: () => confirmarBloqueioUsuario(autorId) });
+      }
+    }
+
+    if (souCriadorDaOferta) {
+      if (mensagem?.hiddenByModeration) {
+        acoes.push({ text: 'Restaurar mensagem', onPress: () => onModerateMessage(mensagem, 'restaurar') });
+      } else {
+        acoes.push({ text: 'Ocultar por moderação', onPress: () => onModerateMessage(mensagem, 'ocultar') });
+      }
+      acoes.push({ text: 'Excluir como admin', style: 'destructive', onPress: () => onModerateMessage(mensagem, 'excluir') });
+    }
+
+    acoes.push({ text: 'Cancelar', style: 'cancel' });
+    Alert.alert('Ações da mensagem', 'Escolha uma ação', acoes);
+  }
+
   const renderizarConteudoMensagem = (mensagem: any) => {
     // Verifica se a mensagem foi apagada para este usuário específico
     const apagadoPara = Array.isArray(mensagem?.apagadoPara) ? mensagem.apagadoPara : [];
@@ -957,6 +1208,14 @@ export default function ChatModal({
     : solicitacaoBloqueadaPorOutro
       ? 'Solicitação em análise'
       : '';
+  const bloqueioUsuarioAtivo = !!chatBloqueado || !!chatBlockMeta?.euBloqueei || !!chatBlockMeta?.fuiBloqueado;
+  const chatInteracaoBloqueada = bloqueioUsuarioAtivo || !termosChatAceitos;
+
+  useEffect(() => {
+    if (chatInteracaoBloqueada && String(chatTexto || '').length > 0) {
+      setChatTexto('');
+    }
+  }, [chatInteracaoBloqueada, chatTexto, setChatTexto]);
 
   if (!chatVisivel || !chatOferta) return null;
 
@@ -999,6 +1258,15 @@ export default function ChatModal({
             </View>
 
             <View style={styles.headerActions}>
+              {!modoSelecao && !!chatBlockMeta?.euBloqueei && !!chatBlockMeta?.outroId && (
+                <TouchableOpacity
+                  onPress={() => confirmarDesbloqueioUsuario(String(chatBlockMeta?.outroId || ''))}
+                  style={styles.headerActionButton}
+                >
+                  <MaterialCommunityIcons name="lock-open-variant-outline" size={22} color="#86efac" />
+                </TouchableOpacity>
+              )}
+
               {modoSelecao && (
                 <>
                   <TouchableOpacity
@@ -1136,6 +1404,15 @@ export default function ChatModal({
                     </TouchableOpacity>
                   )}
 
+                  {!modoSelecao && (
+                    <TouchableOpacity
+                      onPress={() => abrirAcoesMensagem(mensagem)}
+                      style={{ position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(2,6,23,0.24)' }}
+                    >
+                      <MaterialCommunityIcons name="dots-horizontal" size={16} color="#e2e8f0" />
+                    </TouchableOpacity>
+                  )}
+
                   {renderizarConteudoMensagem(mensagem)}
 
                   {podeAceitarSolicitacaoMsg && (
@@ -1256,7 +1533,7 @@ export default function ChatModal({
             <View style={styles.composerShell}>
               <View style={styles.attachmentRail}>
                 <View style={styles.actionPod}>
-                  <TouchableOpacity disabled={chatBloqueado} onPress={enviarImagemDaCamera} style={[styles.iconButton, styles.iconButtonCamera, chatBloqueado && styles.iconButtonDisabled]}>
+                  <TouchableOpacity disabled={chatInteracaoBloqueada} onPress={enviarImagemDaCamera} style={[styles.iconButton, styles.iconButtonCamera, chatInteracaoBloqueada && styles.iconButtonDisabled]}>
                     <MaterialCommunityIcons name="camera-wireless-outline" size={14} color="#a5f3fc" />
                   </TouchableOpacity>
                   <View style={[styles.actionPodAura, styles.actionPodAuraCamera]} />
@@ -1264,7 +1541,7 @@ export default function ChatModal({
                 </View>
 
                 <View style={styles.actionPod}>
-                  <TouchableOpacity disabled={chatBloqueado} onPress={enviarImagemDaGaleria} style={[styles.iconButton, styles.iconButtonGallery, chatBloqueado && styles.iconButtonDisabled]}>
+                  <TouchableOpacity disabled={chatInteracaoBloqueada} onPress={enviarImagemDaGaleria} style={[styles.iconButton, styles.iconButtonGallery, chatInteracaoBloqueada && styles.iconButtonDisabled]}>
                     <MaterialCommunityIcons name="image-multiple-outline" size={14} color="#f5d0fe" />
                   </TouchableOpacity>
                   <View style={[styles.actionPodAura, styles.actionPodAuraGallery]} />
@@ -1272,7 +1549,7 @@ export default function ChatModal({
                 </View>
 
                 <View style={styles.actionPod}>
-                  <TouchableOpacity disabled={chatBloqueado} onPress={compartilharLocalizacao} style={[styles.iconButton, styles.iconButtonLocation, chatBloqueado && styles.iconButtonDisabled]}>
+                  <TouchableOpacity disabled={chatInteracaoBloqueada} onPress={compartilharLocalizacao} style={[styles.iconButton, styles.iconButtonLocation, chatInteracaoBloqueada && styles.iconButtonDisabled]}>
                     <MaterialCommunityIcons name="crosshairs-gps" size={14} color="#bae6fd" />
                   </TouchableOpacity>
                   <View style={[styles.actionPodAura, styles.actionPodAuraLocation]} />
@@ -1281,9 +1558,9 @@ export default function ChatModal({
 
                 <View style={styles.actionPod}>
                   <TouchableOpacity
-                    disabled={chatBloqueado}
+                    disabled={chatInteracaoBloqueada}
                     onPress={gravandoAudio ? pararGravacao : iniciarGravacao}
-                    style={[styles.iconButton, styles.iconButtonAudio, gravandoAudio && styles.iconButtonAudioRecording, chatBloqueado && styles.iconButtonDisabled]}
+                    style={[styles.iconButton, styles.iconButtonAudio, gravandoAudio && styles.iconButtonAudioRecording, chatInteracaoBloqueada && styles.iconButtonDisabled]}
                   >
                     <MaterialCommunityIcons name={gravandoAudio ? 'stop-circle-outline' : 'microphone-outline'} size={14} color="#ddd6fe" />
                   </TouchableOpacity>
@@ -1300,9 +1577,9 @@ export default function ChatModal({
 
               {mostrarAcaoSolicitarNoChat && (
                 <TouchableOpacity
-                  disabled={!podeSolicitarNoChat || chatBloqueado}
+                  disabled={!podeSolicitarNoChat || chatInteracaoBloqueada}
                   onPress={async () => {
-                    if (!podeSolicitarNoChat || chatBloqueado) return;
+                    if (!podeSolicitarNoChat || chatInteracaoBloqueada) return;
                     setSolicitacaoEnviadaAgora(true);
                     try {
                       await solicitarAceiteOferta();
@@ -1333,40 +1610,81 @@ export default function ChatModal({
                 </TouchableOpacity>
               )}
 
-              <View style={styles.messageComposerRow}>
+              {!bloqueioUsuarioAtivo && (
+                <View style={styles.messageComposerRow}>
 
-                <View style={styles.textInputFrame}>
-                  <TextInput
-                    value={chatTexto}
-                    onChangeText={chatBloqueado ? undefined : setChatTexto}
-                    editable={!chatBloqueado}
-                    placeholder={chatBloqueado ? "Chat bloqueado para esta oferta" : "Digite mensagem..."}
-                    placeholderTextColor="#6e88b8"
-                    style={styles.textInput}
-                  />
-                </View>
+                  <View style={styles.textInputFrame}>
+                    <TextInput
+                      value={chatTexto}
+                      onChangeText={chatInteracaoBloqueada ? undefined : setChatTexto}
+                      editable={!chatInteracaoBloqueada}
+                      placeholder={!termosChatAceitos ? 'Aceite os termos do chat para continuar' : 'Digite mensagem...'}
+                      placeholderTextColor="#6e88b8"
+                      style={styles.textInput}
+                    />
+                  </View>
 
-                <Pressable
-                  onPress={async () => {
-                    if (chatBloqueado) return;
-                    if (!chatTexto.trim()) return;
-                    await enviarMensagem({ tipo: 'texto', texto: chatTexto });
-                    setChatTexto('');
-                  }}
-                  style={({ pressed }) => [styles.wrap, pressed && styles.wrapPressed, chatBloqueado && styles.wrapDisabled]}
-                >
-                  <View style={styles.outerSkew}>
-                    <View style={styles.outerBorder}>
-                      <View style={styles.innerSkew}>
-                        <View style={styles.innerBox}>
-                          <Text style={styles.setas}>»»</Text>
-                          <Text style={styles.textoEnviar}>{'ENVIAR'}</Text>
+                  <Pressable
+                    onPress={async () => {
+                      if (chatInteracaoBloqueada) return;
+                      if (!chatTexto.trim()) return;
+                      await enviarMensagem({ tipo: 'texto', texto: chatTexto });
+                      setChatTexto('');
+                    }}
+                    style={({ pressed }) => [styles.wrap, pressed && styles.wrapPressed, chatInteracaoBloqueada && styles.wrapDisabled]}
+                  >
+                    <View style={styles.outerSkew}>
+                      <View style={styles.outerBorder}>
+                        <View style={styles.innerSkew}>
+                          <View style={styles.innerBox}>
+                            <Text style={styles.setas}>»»</Text>
+                            <Text style={styles.textoEnviar}>{'ENVIAR'}</Text>
+                          </View>
                         </View>
                       </View>
                     </View>
-                  </View>
-                </Pressable>
-              </View>
+                  </Pressable>
+                </View>
+              )}
+
+              {bloqueioUsuarioAtivo && (
+                <View style={{
+                  marginTop: 8,
+                  borderWidth: 1,
+                  borderColor: 'rgba(248,113,113,0.45)',
+                  backgroundColor: 'rgba(127,29,29,0.22)',
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                }}>
+                  <Text style={{ color: '#fecaca', fontWeight: '700' }}>
+                    {chatBlockMeta?.fuiBloqueado
+                      ? 'Você foi bloqueado e não pode enviar mensagens nesta conversa.'
+                      : 'Você bloqueou este usuário. Desbloqueie para voltar a enviar mensagens.'}
+                  </Text>
+
+                  {!!chatBlockMeta?.euBloqueei && !!chatBlockMeta?.outroId && (
+                    <TouchableOpacity
+                      onPress={() => confirmarDesbloqueioUsuario(String(chatBlockMeta?.outroId || ''))}
+                      style={{
+                        marginTop: 10,
+                        alignSelf: 'flex-start',
+                        backgroundColor: '#14532d',
+                        borderColor: '#4ade80',
+                        borderWidth: 1,
+                        borderRadius: 10,
+                        paddingVertical: 8,
+                        paddingHorizontal: 10,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <MaterialCommunityIcons name="lock-open-variant-outline" size={14} color="#bbf7d0" style={{ marginRight: 6 }} />
+                      <Text style={{ color: '#dcfce7', fontWeight: '700', fontSize: 12 }}>Desbloquear usuário</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
 
               {gravandoAudio && (
                 <View style={styles.recordingPanel}>
@@ -1380,10 +1698,17 @@ export default function ChatModal({
                 </View>
               )}
 
-              {chatBloqueado && (
+              {bloqueioUsuarioAtivo && (
                 <View style={styles.chatBloqueadoAviso}>
                   <MaterialCommunityIcons name="shield-lock-outline" size={14} color="#fecaca" style={{ marginRight: 6 }} />
                   <Text style={styles.chatBloqueadoTexto}>Chat bloqueado para esta oferta</Text>
+                </View>
+              )}
+
+              {!termosChatAceitos && (
+                <View style={styles.chatBloqueadoAviso}>
+                  <MaterialCommunityIcons name="file-document-alert-outline" size={14} color="#fde68a" style={{ marginRight: 6 }} />
+                  <Text style={styles.chatBloqueadoTexto}>Aceite os termos obrigatórios do chat para enviar mensagens</Text>
                 </View>
               )}
             </View>
@@ -1394,6 +1719,105 @@ export default function ChatModal({
           </View>
         </View>
       </ImageBackground>
+
+      <Modal
+        visible={termosModalVisivel}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
+        <View style={styles.imagemTelaCheiaOverlay}>
+          <View style={{ width: '90%', maxWidth: 460, backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155', borderRadius: 16, padding: 16 }}>
+            <Text style={{ color: '#f8fafc', fontSize: 18, fontWeight: '800', marginBottom: 10 }}>Termos obrigatórios do chat</Text>
+            <Text style={{ color: '#cbd5e1', lineHeight: 20, marginBottom: 14 }}>
+              Não é permitido nudez, violência, ameaças, golpes, spam, assédio ou envio de conteúdo ilegal.
+            </Text>
+            <TouchableOpacity
+              onPress={aceitarTermosChatObrigatorio}
+              disabled={aceitandoTermos}
+              style={{ backgroundColor: '#0ea5e9', borderRadius: 10, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#67e8f9' }}
+            >
+              <Text style={{ color: '#f8fafc', fontWeight: '800' }}>{aceitandoTermos ? 'Salvando...' : 'Concordo'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={reportModalVisivel}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setReportModalVisivel(false)}
+      >
+        <View style={styles.imagemTelaCheiaOverlay}>
+          <View style={{ width: '92%', maxWidth: 500, backgroundColor: '#020617', borderWidth: 1, borderColor: '#334155', borderRadius: 16, padding: 14, maxHeight: '80%' }}>
+            <Text style={{ color: '#f8fafc', fontSize: 17, fontWeight: '800', marginBottom: 10 }}>Denunciar mensagem</Text>
+            <ScrollView style={{ maxHeight: 260 }}>
+              {REPORT_MOTIVOS.map((motivo) => {
+                const ativo = reportMotivoSelecionado === motivo;
+                return (
+                  <TouchableOpacity
+                    key={motivo}
+                    onPress={() => setReportMotivoSelecionado(motivo)}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: ativo ? '#67e8f9' : '#334155',
+                      backgroundColor: ativo ? 'rgba(14,165,233,0.2)' : 'rgba(15,23,42,0.8)',
+                      borderRadius: 10,
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <Text style={{ color: '#e2e8f0', fontWeight: '700' }}>{motivo}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {reportMotivoSelecionado === 'Outro' && (
+              <TextInput
+                value={reportDescricaoLivre}
+                onChangeText={setReportDescricaoLivre}
+                multiline
+                placeholder="Descreva o motivo"
+                placeholderTextColor="#64748b"
+                style={{
+                  marginTop: 8,
+                  borderWidth: 1,
+                  borderColor: '#334155',
+                  borderRadius: 10,
+                  color: '#f1f5f9',
+                  padding: 10,
+                  minHeight: 72,
+                  textAlignVertical: 'top',
+                }}
+              />
+            )}
+
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
+              <TouchableOpacity onPress={() => setReportModalVisivel(false)} style={{ paddingVertical: 10, paddingHorizontal: 14, marginRight: 8 }}>
+                <Text style={{ color: '#cbd5e1', fontWeight: '700' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                disabled={!reportMotivoSelecionado || reportEnviando || (reportMotivoSelecionado === 'Outro' && !String(reportDescricaoLivre || '').trim())}
+                onPress={enviarDenunciaMensagem}
+                style={{
+                  backgroundColor: '#dc2626',
+                  borderWidth: 1,
+                  borderColor: '#fca5a5',
+                  borderRadius: 10,
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  opacity: (!reportMotivoSelecionado || reportEnviando) ? 0.6 : 1,
+                }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '800' }}>{reportEnviando ? 'Enviando...' : 'Enviar denúncia'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={!!imagemTelaCheia}

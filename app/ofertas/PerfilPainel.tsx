@@ -1,9 +1,19 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { addDoc, collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import * as FileSystem from "expo-file-system/legacy";
+import * as ImagePicker from "expo-image-picker";
+import { collection, doc, serverTimestamp } from "firebase/firestore";
+import { getDownloadURL, ref, uploadString } from "firebase/storage";
 import React, { useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { db } from "../../firebase";
+import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { db, storage } from "../../firebase";
+import {
+    addDocWithLog as addDoc,
+    getDocWithLog as getDoc,
+    getDocsWithLog as getDocs,
+    setDocWithLog as setDoc,
+    updateDocWithLog as updateDoc,
+} from "../../utils/firestoreDebug";
 
 type Veiculo = {
   tipo: "carro" | "moto" | "van";
@@ -47,6 +57,7 @@ const perfilVazio: PerfilData = {
 };
 
 const tiposVeiculo: Array<Veiculo["tipo"]> = ["carro", "moto", "van"];
+const LIMITE_FOTO_DATA_URL = 450000;
 
 function formatarDataHistorico(valor:any, semDataLabel: string) {
   const bruto = String(valor || "").trim();
@@ -96,6 +107,7 @@ export default function PerfilPainel({
   const [contatoJaAdicionado, setContatoJaAdicionado] = useState(false);
   const [perfilDesbloqueado, setPerfilDesbloqueado] = useState(false);
   const [verificandoDesbloqueio, setVerificandoDesbloqueio] = useState(false);
+  const [enviandoFoto, setEnviandoFoto] = useState(false);
 
   useEffect(() => {
     let ativo = true;
@@ -109,9 +121,14 @@ export default function PerfilPainel({
         // fallback/cross-device: tenta Firestore quando não há dados locais
         if(!salvo){
           try{
-            const snapRemoto = await getDoc(doc(db, "perfisUsuarios", String(usuarioId)));
-            if(snapRemoto.exists()){
-              const remoto:any = snapRemoto.data() || {};
+            const [snapUsuario, snapLegado] = await Promise.all([
+              getDoc(doc(db, "usuarios", String(usuarioId))),
+              getDoc(doc(db, "perfisUsuarios", String(usuarioId))),
+            ]);
+            const remoto:any = snapUsuario.exists()
+              ? (snapUsuario.data() || {})
+              : (snapLegado.exists() ? (snapLegado.data() || {}) : null);
+            if(remoto){
               perfil = {
                 nome: String(remoto?.nome || ""),
                 foto: String(remoto?.foto || ""),
@@ -245,7 +262,7 @@ export default function PerfilPainel({
       try {
         const snapshot = await getDocs(collection(db, "avaliacoesUsuarios"));
         const avaliacoes = snapshot.docs
-          .map((docAtual) => ({ id: docAtual.id, ...docAtual.data() }))
+          .map((docAtual) => ({ id: docAtual.id, ...(docAtual.data() as any || {}) }))
           .filter((item:any) => String(item?.avaliadoId) === String(usuarioId));
 
         if (!ativo) return;
@@ -290,16 +307,195 @@ export default function PerfilPainel({
 
     try {
       await AsyncStorage.setItem(`perfil_${usuarioId}`, JSON.stringify(perfil));
-      await setDoc(doc(db, "perfisUsuarios", String(usuarioId)), {
+      const payload = {
         ...perfil,
         atualizadoEm: serverTimestamp(),
         atualizadoEmCliente: Date.now()
-      }, { merge: true });
+      };
+
+      await Promise.all([
+        setDoc(doc(db, "usuarios", String(usuarioId)), payload, { merge: true }),
+        setDoc(doc(db, "perfisUsuarios", String(usuarioId)), payload, { merge: true }),
+      ]);
       Alert.alert(tp("perfilSalvoTitulo", "Profile saved"), tp("perfilSalvoTexto", "This user's information has been updated."));
     } catch (e) {
       console.log("Erro ao salvar perfil:", e);
       Alert.alert(tp("erro", "Error"), tp("erroSalvarPerfilTexto", "Could not save profile right now."));
     }
+  }
+
+  async function persistirFotoPerfil(urlFoto: string) {
+    try {
+      const perfilAtualRaw = await AsyncStorage.getItem(`perfil_${usuarioId}`);
+      const perfilAtual: PerfilData = perfilAtualRaw ? JSON.parse(perfilAtualRaw) : perfilVazio;
+      const perfilAtualizado: PerfilData = {
+        ...perfilAtual,
+        nome,
+        cidade,
+        telefone,
+        veiculos,
+        foto: String(urlFoto || "").trim(),
+      };
+
+      await AsyncStorage.setItem(`perfil_${usuarioId}`, JSON.stringify(perfilAtualizado));
+
+      const payload = {
+        foto: String(urlFoto || "").trim(),
+        atualizadoEm: serverTimestamp(),
+        atualizadoEmCliente: Date.now(),
+      };
+
+      await Promise.all([
+        setDoc(doc(db, "usuarios", String(usuarioId)), payload, { merge: true }),
+        setDoc(doc(db, "perfisUsuarios", String(usuarioId)), payload, { merge: true }),
+      ]);
+    } catch (error) {
+      console.log("Erro ao persistir foto de perfil:", error);
+      throw error;
+    }
+  }
+
+  async function removerFotoPerfil() {
+    if (somenteLeitura) return;
+
+    try {
+      setEnviandoFoto(true);
+      setFoto("");
+      await persistirFotoPerfil("");
+      Alert.alert(tp("fotoRemovida", "Foto removida"), tp("fotoRemovidaTexto", "Sua foto de perfil foi removida."));
+    } catch (error) {
+      console.log("Erro ao remover foto de perfil:", error);
+      Alert.alert(tp("erro", "Error"), tp("erroRemoverFotoPerfil", "Nao foi possivel remover a foto de perfil agora."));
+    } finally {
+      setEnviandoFoto(false);
+    }
+  }
+
+  async function uploadFotoPerfil(uri: string, mimeType?: string, base64Data?: string | null) {
+    const tipoMime = String(mimeType || "image/jpeg");
+    const extensao = tipoMime.includes("png") ? "png" : tipoMime.includes("webp") ? "webp" : "jpg";
+    const caminho = `perfil_fotos/${String(usuarioId || "anonimo")}/${Date.now()}.${extensao}`;
+    const referencia = ref(storage, caminho);
+
+    let base64Limpa = String(base64Data || "").trim();
+    if (!base64Limpa) {
+      // Em alguns Androids o ImagePicker nao retorna base64; le do arquivo diretamente.
+      if (uri.startsWith("data:")) {
+        const extraido = String(uri.match(/^data:.*?;base64,(.*)$/)?.[1] || "").trim();
+        base64Limpa = extraido;
+      }
+    }
+
+    if (!base64Limpa) {
+      base64Limpa = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      base64Limpa = String(base64Limpa || "").trim();
+    }
+
+    if (!base64Limpa) {
+      throw new Error("PROFILE_PHOTO_BASE64_EMPTY");
+    }
+
+    const dataUrl = `data:${tipoMime};base64,${base64Limpa}`;
+    console.log("[perfil-foto] upload via data_url", { caminho, mime: tipoMime, tam: dataUrl.length });
+    try {
+      await uploadString(referencia, dataUrl, "data_url", { contentType: tipoMime });
+      const url = await getDownloadURL(referencia);
+      return url;
+    } catch (error:any) {
+      const mensagem = String(error?.message || error || "");
+      const ehFalhaBlobAndroid = mensagem.includes("Creating blobs from 'ArrayBuffer'") || mensagem.includes("ArrayBufferView");
+
+      if (ehFalhaBlobAndroid) {
+        console.log("[perfil-foto] fallback para data URL no perfil", { tam: dataUrl.length });
+        if (dataUrl.length > LIMITE_FOTO_DATA_URL) {
+          throw new Error("PROFILE_PHOTO_DATA_URL_TOO_LARGE");
+        }
+        return dataUrl;
+      }
+
+      throw error;
+    }
+  }
+
+  async function escolherFotoPerfil(origem: "camera" | "galeria") {
+    if (somenteLeitura) return;
+
+    try {
+      setEnviandoFoto(true);
+
+      const permissao = origem === "camera"
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (permissao.status !== "granted") {
+        Alert.alert(
+          tp("permissaoNecessaria", "Permissao necessaria"),
+          origem === "camera"
+            ? tp("permitaAcessoCamera", "Permita acesso a camera para tirar foto de perfil.")
+            : tp("permitaAcessoGaleria", "Permita acesso a galeria para escolher foto de perfil.")
+        );
+        return;
+      }
+
+      const resultado = origem === "camera"
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.32, allowsEditing: true, aspect: [1, 1], base64: true })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.32, allowsEditing: true, aspect: [1, 1], allowsMultipleSelection: false, base64: true });
+
+      if (resultado.canceled) return;
+
+      const asset = resultado.assets?.[0];
+      if (!asset?.uri) {
+        Alert.alert(tp("erro", "Error"), tp("erroProcessarFoto", "Nao foi possivel processar a foto selecionada."));
+        return;
+      }
+
+      const url = await uploadFotoPerfil(
+        String(asset.uri),
+        String(asset.mimeType || "image/jpeg"),
+        String((asset as any)?.base64 || "")
+      );
+      if (String(url || "").startsWith("data:") && String(url).length > LIMITE_FOTO_DATA_URL) {
+        Alert.alert(tp("erro", "Error"), tp("fotoMuitoGrande", "A foto ficou muito grande. Tente outra imagem ou corte mais no centro."));
+        return;
+      }
+
+      setFoto(url);
+      await persistirFotoPerfil(url);
+
+      Alert.alert(tp("fotoAtualizada", "Foto atualizada"), tp("fotoAtualizadaTexto", "Sua foto de perfil foi salva e ja esta visivel para outros usuarios."));
+    } catch (error) {
+      console.log("Erro ao definir foto de perfil:", error, (error as any)?.code, (error as any)?.message);
+      Alert.alert(tp("erro", "Error"), tp("erroSalvarFotoPerfil", "Nao foi possivel atualizar a foto de perfil agora."));
+    } finally {
+      setEnviandoFoto(false);
+    }
+  }
+
+  function abrirOpcoesFotoPerfil() {
+    if (somenteLeitura) return;
+
+    Alert.alert(
+      tp("fotoPerfil", "Foto de perfil"),
+      tp("escolhaOrigemFotoPerfil", "Escolha de onde enviar a foto"),
+      [
+        {
+          text: tp("tirarFoto", "Tirar foto"),
+          onPress: () => { escolherFotoPerfil("camera"); }
+        },
+        {
+          text: tp("escolherGaleria", "Escolher da galeria"),
+          onPress: () => { escolherFotoPerfil("galeria"); }
+        },
+        ...(
+          String(foto || "").trim()
+            ? [{ text: tp("removerFoto", "Remover foto"), style: "destructive" as const, onPress: () => { removerFotoPerfil(); } }]
+            : []
+        ),
+        { text: tp("cancelar", "Cancelar"), style: "cancel" }
+      ]
+    );
   }
 
   async function enviarAvaliacao() {
@@ -342,7 +538,7 @@ export default function PerfilPainel({
 
       const snapshot = await getDocs(collection(db, "avaliacoesUsuarios"));
       const avaliacoes = snapshot.docs
-        .map((docAtual) => ({ id: docAtual.id, ...docAtual.data() }))
+        .map((docAtual) => ({ id: docAtual.id, ...(docAtual.data() as any || {}) }))
         .filter((item:any) => String(item?.avaliadoId) === String(usuarioId));
       const total = avaliacoes.length;
       const soma = avaliacoes.reduce((acc:number, item:any) => acc + Number(item?.nota || 0), 0);
@@ -459,7 +655,35 @@ export default function PerfilPainel({
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>{tp("dadosPessoais", "Personal data")}</Text>
             <CampoPerfil label={tp("nome", "Name")} placeholder={tp("nomeUsuarioPlaceholder", "User name")} value={nome} onChangeText={setNome} editable={!somenteLeitura} fallback={tp("nomeNaoInformado", "Name not informed")} />
-            <CampoPerfil label={tp("foto", "Photo")} placeholder={tp("fotoUrlPlaceholder", "Photo (URL)")} value={foto} onChangeText={setFoto} editable={!somenteLeitura} fallback={tp("fotoNaoInformada", "Photo not informed")} />
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>{tp("foto", "Photo")}</Text>
+              {!somenteLeitura && (
+                <TouchableOpacity
+                  onPress={abrirOpcoesFotoPerfil}
+                  style={[styles.input, styles.photoPickerButton, enviandoFoto && { opacity: 0.7 }]}
+                  disabled={enviandoFoto}
+                >
+                  <MaterialCommunityIcons name={enviandoFoto ? "cloud-upload" : "camera-plus-outline"} size={18} color="#9cecff" />
+                  <Text style={styles.photoPickerButtonText}>
+                    {enviandoFoto ? tp("enviandoFoto", "Enviando foto...") : tp("selecionarFotoPerfil", "Selecionar foto (camera ou galeria)")}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.photoPreviewWrap}>
+                {String(foto || "").trim() ? (
+                  <Image source={{ uri: String(foto) }} style={styles.photoPreview} />
+                ) : (
+                  <View style={styles.photoFallbackAvatar}>
+                    <MaterialCommunityIcons name="account" size={32} color="#7dd3fc" />
+                  </View>
+                )}
+              </View>
+
+              {!String(foto || "").trim() && (
+                <Text style={styles.emptyText}>{tp("fotoPadraoAtiva", "Sem foto: avatar padrao ativo")}</Text>
+              )}
+            </View>
             <CampoPerfil label={tp("cidade", "City")} placeholder={tp("cidade", "City")} value={cidade} onChangeText={setCidade} editable={!somenteLeitura} fallback={tp("cidadeNaoInformada", "City not informed")} />
             {somenteLeitura && !perfilDesbloqueado ? (
               <View style={styles.lockedField}>
@@ -752,6 +976,38 @@ const styles = StyleSheet.create({
   inputReadOnly: {
     borderColor: "rgba(144, 205, 224, 0.35)",
     color: "#d7f7ff"
+  },
+  photoPickerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  photoPickerButtonText: {
+    color: "#c9f4ff",
+    fontWeight: "600",
+    flex: 1,
+  },
+  photoPreviewWrap: {
+    marginTop: 10,
+    alignItems: "flex-start",
+  },
+  photoPreview: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 1,
+    borderColor: "#11d8ff",
+    backgroundColor: "rgba(5, 18, 30, 0.9)",
+  },
+  photoFallbackAvatar: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 1,
+    borderColor: "rgba(17, 216, 255, 0.6)",
+    backgroundColor: "rgba(5, 18, 30, 0.95)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   lockedField: {
     flexDirection: "row",

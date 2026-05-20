@@ -173,7 +173,7 @@ export function usuarioEhPremiumFree(plano: PlanoUsuario): boolean {
 
 /**
  * Retorna true se o Premium Free ainda está dentro do período de validade
- * (2 meses a partir da data de lançamento na Play Store).
+ * (75 dias a partir da data de lançamento na Play Store).
  */
 export function premiumFreeDisponivel(agora: number = Date.now()): boolean {
   return agora <= DATA_FIM_PREMIUM_FREE;

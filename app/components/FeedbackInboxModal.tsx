@@ -1,17 +1,22 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
+import { collection, doc, orderBy, query } from "firebase/firestore";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Modal,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Image,
+    Modal,
+    ScrollView,
+    Text,
+    TouchableOpacity,
+    View
 } from "react-native";
 import { db } from "../../firebase";
+import {
+    deleteDocWithLog as deleteDoc,
+    onSnapshotWithLog as onSnapshot,
+    updateDocWithLog as updateDoc,
+} from "../../utils/firestoreDebug";
 
 type Props = {
   visivel: boolean;

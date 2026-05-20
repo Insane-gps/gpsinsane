@@ -86,12 +86,74 @@ export const PIADAS_INSANO: PiadaInsanaItem[] = [
 { pergunta:"Qual é o contrário de volátil?", pausa:1500, resposta:"Vem cá sobrinho. (essa foi boa em)" },
 { pergunta:"O que o cachorro falou para o poste?", pausa:1500, resposta:"Você é muito iluminado. (essa foi sem graça eu sei)" },
 { pergunta:"Qual é o animal mais antigo?", pausa:1500, resposta:"A zebra, porque está em preto e branco. (Essa foi uma porcaria)" },
+ { pergunta:"O que a CIA faz para prender o bandido?", pausa:1500, resposta:"Ela erra, é errando que CIA prende. (Caraca, essa foi muito boa mesmo)" },
 
+{ pergunta:"O que o cara falou pra Disney?", pausa:1500, resposta:"Uau Disney. (Essa foi boa demais)" },
+
+{ pergunta:"Por que o bispo ligou pro Edir ir de manhã?", pausa:1500, resposta:"Pro Edir mais cedo. (Essa foi boa)" },
+
+{ pergunta:"Do que é feita a casa de Deus?", pausa:1500, resposta:"De alve maria. (Boa demais essa)" },
+
+{ pergunta:"Qual cachorro toma conta de estacionamento?", pausa:1500, resposta:"Rot vallet. (Essa foi mais ou menos)" },
+
+{ pergunta:"Qual cachorro mergulha muito?", pausa:1500, resposta:"Piti bum. (Essa foi ruim demais)" },
+
+{ pergunta:"Qual cidade nórdica tem problema de autoestima?", pausa:1500, resposta:"Estou como? (Boa demais essa)" },
+
+{ pergunta:"Sabe o que vem antes do Milton Cunha?", pausa:1500, resposta:"Novecentos e noventa e nove Tom Cunha. (Essa foi boa mesmo)" },
+
+{ pergunta:"Você gosta do zoo, mas o que é zoo?", pausa:1500, resposta:"Lógico. (Depois dessa vou tomar meu remédio pra loucura)" },
+
+{ pergunta:"Por que o médico receitou pro Luciano Huck jogar LOL?", pausa:1500, resposta:"Porque lóu cura, lóu cura, lóu cura. (Essa foi estupidamente boa)" },
+
+{ pergunta:"Qual é o carro que não quer ser dirigido pela Renata?", pausa:1500, resposta:"O Renault. (Boa essa)" },
+
+{ pergunta:"Por que as pessoas compram pão na Amazônia?", pausa:1500, resposta:"Porque é o maior Pullmam do mundo. (Essa foi ótima)" },
+
+{ pergunta:"Qual atriz dá pra ouvir de todos os cantos?", pausa:1500, resposta:"Renata Surround. (Essa foi boa mesmo)" },
+
+{ pergunta:"Qual sambista vive cansado?", pausa:1500, resposta:"É o Mortinho da Vila. (Essa foi boa)" },
+
+{ pergunta:"Qual rap nasceu na Itália?", pausa:1500, resposta:"Romano Brown. (Essa foi ruim em)" },
+
+{ pergunta:"Qual é o prato de comida que está sempre ocupado no telefone?", pausa:1500, resposta:"É o tu tu. (Caraca, muito boa essa)" },
+
+{ pergunta:"Qual parente se encontra na igreja?", pausa:1500, resposta:"Sermão. (Essa foi muito boa)" },
+
+{ pergunta:"O que acontece com os leões quando acabam as férias?", pausa:1500, resposta:"Volta às jaulas. (Essa foi boa demais)" },
+
+{ pergunta:"Como o padre bateu o carro?", pausa:1500, resposta:"Dando uma rezinha. (Essa foi excelente)" },
+
+{ pergunta:"Qual o contrário de papelada?", pausa:1500, resposta:"Pá vestida. (Essa foi maravilhosamente boa)" },
+
+{ pergunta:"Qual personagem da Disney ia mudar de história mas não mudou?", pausa:1500, resposta:"Quasímodo. (Essa foi excelente)" },
+
+{ pergunta:"Qual time se alimentou de um imperador?", pausa:1500, resposta:"É o Atleti come Nero. (Essa foi boa mesmo)" },
+
+{ pergunta:"O que a mamãe açaí disse pros filhos?", pausa:1500, resposta:"O último açaí, feche a porta. (Essa foi excelente)" },
+
+{ pergunta:"Qual torresmo nunca está de bem com a vida?", pausa:1500, resposta:"Torresmungando. (Essa foi extraordinária)" },
+
+{ pergunta:"Qual ator de Hollywood tem a melhor mira do mundo?", pausa:1500, resposta:"Wesley Sniper. (Essa foi muito boa mesmo)" },
+
+{ pergunta:"Qual ator de Hollywood é muito bom com baralho?", pausa:1500, resposta:"Wesley e os náipes. (Muito boa essa em)" },
+
+{ pergunta:"Qual grupo musical é o favorito do leão?", pausa:1500, resposta:"Rouge. (Essa foi mais ou menos)" },
+
+{ pergunta:"O que é um papel A3 no carnaval?", pausa:1500, resposta:"É um folhão. (Essa foi mais ou menos)" },
+
+{ pergunta:"O que um hipopótamo fez com a casa dele?", pausa:1500, resposta:"Ele hipopotecou. (Essa foi boa)" },
+
+{ pergunta:"Por que voltou a luz no céu?", pausa:1500, resposta:"Porque relâm pagou. (Essa foi muito boa)" },
+
+{ pergunta:"Qual conto de fadas é o mais fedido que existe?", pausa:1500, resposta:"O gato de bostas. (Essa foi muito boa)" },
+
+{ pergunta:"Qual pássaro quer fazer fofoca sobre mulher mas esquece o que ia falar?", pausa:1500, resposta:"Sábe a... (Excelente essa)" },
 { pergunta:"Por que o lápis foi preso?", pausa:1500, resposta:"Porque apontou alguém. (Péssima essa, não da pra rir)" },
 { pergunta:"Qual é o doce preferido do átomo?", pausa:1500, resposta:"Pé de molécula. (essa foi muito boa em)" },
 { pergunta:"Por que o espelho não mente?", pausa:1500, resposta:"Porque reflete a verdade. (essa não foi boa, eu sei)" },
 { pergunta:"Qual é o rei da horta?", pausa:1500, resposta:"O rei-polho. (essa foi muito boa)" },
-{ pergunta:"Por que a vaca foi para o espaço?", pausa:1500, resposta:"Para visitar a Via Láctea. (Totalmente sem graça essa, eu sei)" },
+{ pergunta:"Por que a vaca foi para o espáço?", pausa:1500, resposta:"Para visitar a Via Láctea. (Totalmente sem graça essa, eu sei)" },
 
 { pergunta:"O que é um pontinho amarelo na piscina?", pausa:1500, resposta:"Um milho nadando.(Nossa! Essa foi péssima, eu sei)" },
 { pergunta:"O que é um pontinho verde no canto?", pausa:1500, resposta:"Um ervilha de castigo. (essa foi ruim, mas foi boa)" },
@@ -170,7 +232,7 @@ export const PIADAS_INSANO: PiadaInsanaItem[] = [
 { pergunta:"Por que o lápis escreve?", pausa:1500, resposta:"Porque tem grafite. (Essa foi ruim, eu sei)" },
 { pergunta:"O que o pato disse para a pata?", pausa:1500, resposta:"Vem quá. (Essa foi boa em!)" },
 { pergunta:"Qual é o doce que vive triste?", pausa:1500, resposta:"O amargo. (Essa foi ruim demais, eu sei)" },
-{ pergunta:"Por que o boi foi pro espaço?", pausa:1500, resposta:"Pra ver a Via Láctea. (Essa foi ruim que dói, eu sei)" },
+{ pergunta:"Por que o boi foi pro espáço?", pausa:1500, resposta:"Pra ver a Via Láctea. (Essa foi ruim que dói, eu sei)" },
 { pergunta:"Qual o cúmulo da força?", pausa:1500, resposta:"Dobrar a esquina. (Essa foi quase boa)" },
 { pergunta:"O que o tomate disse?", pausa:1500, resposta:"Tô vermelho de vergonha. (Essa foi ruim, eu sei)" },
 { pergunta:"Qual o animal mais educado?", pausa:1500, resposta:"O porco-espinho, porque sempre dá licença. (Essa foi péssima, eu sei)" },
@@ -222,7 +284,7 @@ export const PIADAS_INSANO: PiadaInsanaItem[] = [
 { pergunta:"Qual é o doce que gosta de música?", pausa:1500, resposta:"O rapadura. (Essa foi ruim demais, estou tentando melhorar)" },
 
 { pergunta:"Qual é o animal mais ligado?", pausa:1500, resposta:"O elefante, porque tem tomada. (Ruim demais essa, não sei de onde eu tiro)" },
-{ pergunta:"O que é um pontinho amarelo no espaço?", pausa:1500, resposta:"Um milho astronauta. (Essa é ruim mesmo)" },
+{ pergunta:"O que é um pontinho amarelo no espáço?", pausa:1500, resposta:"Um milho astronauta. (Essa é ruim mesmo)" },
 { pergunta:"Qual é o cúmulo da economia?", pausa:1500, resposta:"Guardar vento. (Foi ruim essa, mas alguém já disse estocar vento)" },
 { pergunta:"O que é um pontinho preto no vidro?", pausa:1500, resposta:"Uma mosca curiosa. (Ruim essa, vou tentar melhorar)" },
 { pergunta:"Qual é o peixe mais elétrico?", pausa:1500, resposta:"O peixe-choque. (Péssima essa, vou tomar meu garenal)" },
@@ -299,8 +361,6 @@ export const PIADAS_INSANO: PiadaInsanaItem[] = [
 { pergunta:"Ô {{Nome}}, Por que o arqueólogo escolheu essa profissão?", pausa:1500, resposta:"Porque ele queria desenterrar o passado. (essa foi boa!)" },
 { pergunta:"Viu {{Nome}}, Por que o arqueólogo escolheu essa profissão?", pausa:1500, resposta:"Porque a carreira dele estava em ruínas! (essa foi muito boa demais em)" },
 { pergunta:"Ei {{Nome}}, Por que a esposa do Hulk pediu divórcio?", pausa:1500, resposta:"Porque ele estava sempre verde de raiva. (essa foi muito boa em)" },
-
-{ pergunta:"Ô {{Nome}}, Por que a esposa do Hulk pediu divórcio?", pausa:1500, resposta:"Porque ele era maduro demais. (essa foi boa!)" },
 { pergunta:"Viu {{Nome}}, Por que os pássaros voam para o sul?", pausa:1500, resposta:"Porque é muito longe para ir andando!  (essa foi muito boa demais em)" },
 { pergunta:"Ei {{Nome}},Todas as frutas foram passar as férias na montanha, menos o mamão.", pausa:1500, resposta:"Porque o mamão foi papaia! (essa foi muito boa em)" },
 
@@ -345,7 +405,7 @@ export const PIADAS_INSANO: PiadaInsanaItem[] = [
 { pergunta:"Ei {{Nome}}, O que o advogado do frango foi fazer na delegacia?", pausa:1500, resposta:"Foi soltar a franga. (essa foi muito boa em)" },
 
 { pergunta:"Ô {{Nome}}, O que o tomate foi fazer no banco?", pausa:1500, resposta:"Foi tirar um extrato! (essa foi boa!)" },
-{ pergunta:"Viu {{Nome}}, O que a vaca foi fazer no espaço?", pausa:1500, resposta:"Foi procurar o vácuo.  (essa foi boa em)" },
+{ pergunta:"Viu {{Nome}}, O que a vaca foi fazer no espáço?", pausa:1500, resposta:"Foi procurar o vácuo.  (essa foi boa em)" },
 { pergunta:"Ei {{Nome}}, O que a fechadura falou para a chave?", pausa:1500, resposta:"Vamos dar uma voltinha. (essa foi muito boa em)" },
 
 { pergunta:"Ô {{Nome}}, Qual o animal que machuca sem morder?", pausa:1500, resposta:"O porco-espinho! (essa foi boa!)" },
@@ -416,7 +476,7 @@ export const PIADAS_INSANO: PiadaInsanaItem[] = [
 { pergunta:"Viu {{Nome}}, Quem é o rei dos queijos?", pausa:1500, resposta:" O rei-queijão. (essa foi boa em)" },
 { pergunta:"Ei {{Nome}},  Qual é o café mais perigoso do mundo?", pausa:1500, resposta:"O ex-presso. (essa foi boa)" },
 
-{ pergunta:"Ô {{Nome}}, Por que o porco está sempre feliz?", pausa:1500, resposta:"Porque está de bacon a vida! (essa foi boa!)" },
+{ pergunta:"Ô {{Nome}}, Por que o porco está sempre feliz?", pausa:1500, resposta:"Porque está de bacon a vida! (essa foi muito boa mesmo!)" },
 { pergunta:"Viu {{Nome}}, Qual é o cúmulo da solidão?", pausa:1500, resposta:"  Morar sozinho e fugir de casa.  (essa foi boa em)" },
 { pergunta:"Ei {{Nome}},  Por que o jardineiro nunca briga com a planta?", pausa:1500, resposta:"Porque ele sempre a rega! (essa foi boa demais)" },
 
@@ -444,7 +504,7 @@ export const PIADAS_INSANO: PiadaInsanaItem[] = [
 { pergunta:"Viu {{Nome}},  O que o lápis disse para o papel?", pausa:1500, resposta:"Estou escrevendo minha história. (essa foi boa.)" },
 { pergunta:"Ei {{Nome}}, Por que o computador foi ao médico?", pausa:1500, resposta:"Porque ele estava com um vírus. (essa foi boa)" },
 
-{ pergunta:"Ô {{Nome}},  Como o astronauta se veste para ir ao espaço?", pausa:1500, resposta:"De gravidade. (essa foi boa!)" },
+{ pergunta:"Ô {{Nome}},  Como o astronauta se veste para ir ao espáço?", pausa:1500, resposta:"De gravidade. (essa foi boa!)" },
 { pergunta:"Viu {{Nome}}, Por que o estudante não usava relógio?", pausa:1500, resposta:"Porque tinha um horário complicado. (essa foi boa.)" },
 { pergunta:"Ei {{Nome}},  Por que o jacaré tirou o sapato", pausa:1500, resposta:"Porque ele estava com pé no lago. (essa foi boa)" },
 
@@ -484,6 +544,137 @@ export const PIADAS_INSANO: PiadaInsanaItem[] = [
 { pergunta:"Ei {{Nome}}, O que tem quatro patas e voa?", pausa:1500, resposta:"Um casal de passarinhos. (essa foi boa)" },
 { pergunta:"Ei {{Nome}}, Uma vaca pergunta para a outra, você não tem medo de pegar a doença da vaca louca?", pausa:1500, resposta:"Por que teria? Eu sou um helicóptero. (essa foi boa)" },
 
+{ pergunta:"Ei {{Nome}}, Uma rena mais uma rena igual a duas renas. Qual o nome da doença?", pausa:1500, resposta:"Cálculo renal. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Quem é a vó dos trigos?", pausa:1500, resposta:"A véia quáker (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Por que a Chita ficou brava com o Tarzan?", pausa:1500, resposta:"Porque ele é amigo da onça. (essa foi boa)" },
+
+{ pergunta:"Ei {{Nome}}, O que aconteceria se chovesse chocolate?", pausa:1500, resposta:"A gente ia se molhar tó dinho. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, O que o cavalo foi fazer no orelhao?", pausa:1500, resposta:"Passar um trote (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Onde é a casa da ovelha?", pausa:1500, resposta:"A lã ráuze. (essa foi boa)" },
+
+{ pergunta:"Ei {{Nome}},  O que o Batman foi fazer no domingo?", pausa:1500, resposta:"Ele foi num bati zado. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Como o Batman conheceu o Robin?", pausa:1500, resposta:"Num bat papo (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Qual a hortaliça favorita do Batman?", pausa:1500, resposta:"A bate raba. (essa foi boa)" },
+
+{ pergunta:"Ei {{Nome}},  Por que os outros vírus não andam com o H1N1?", pausa:1500, resposta:"Porque ele é uma má influenza. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, O que um neurônio diz quando vai se deitar?", pausa:1500, resposta:"Aaaxônio (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Onde dorme o neurônio?", pausa:1500, resposta:"Na rede neural (essa foi boa mesmo)" },
+
+{ pergunta:"Ei {{Nome}},  Por que as hemácias não se perdem no sangue?", pausa:1500, resposta:"Porque elas seguem as plaquetas. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, O que um cromossomo grandão disse para o outro?", pausa:1500, resposta:"Autos somos (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, O que a célula falou quando foi ao cabeleireiro?", pausa:1500, resposta:"Mi tóze (essa foi boa mesmo)" },
+
+{ pergunta:"Ei {{Nome}}, Por que o vírus foi expulso do restaurante chique?", pausa:1500, resposta:"Porque ele não tem classe. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Por que a célula foi ao psicólogo?", pausa:1500, resposta:"Porque ela tem complexo de Golgi. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}},  Por que a mata é virgem?", pausa:1500, resposta:"Porque o vento é fresco. (essa foi boa mesmo)" },
+
+{ pergunta:"Ei {{Nome}}, Por que o macaco prego nunca entra no mar?", pausa:1500, resposta:"Porque tem medo do tubarão martelo. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Por que a plantinha não pôde ser atendida no hospital?", pausa:1500, resposta:"Porque só havia médico de plantão. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Por que o policial não gosta de sabão em pó?", pausa:1500, resposta:"Porque ele gosta de deter gente. (essa foi muito boa)" },
+
+{ pergunta:"Ei {{Nome}}, Por que o pinheiro não se perde na floresta?", pausa:1500, resposta:"Porque ele tem uma pinha, um mapinha. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Qual a parte do carro que foi inventada no Egito antigo?", pausa:1500, resposta:"Os faraóis. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Por que o elefante não pega fogo?", pausa:1500, resposta:"Porque ele já é cinza. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, O que o tomate foi fazer no banco?", pausa:1500, resposta:"Foi tirar um extrato. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Por que a roda de trem é de ferro?", pausa:1500, resposta:"Porque se fosse de borracha apagaria a linha. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Por que o salgadinho fandangos fugiu de casa?", pausa:1500, resposta:"Porque a casa dele era um saco. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Você conhece a piada do não nem eu?", pausa:1500, resposta:"Não? Nem eu! (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, O que o economista disse quando a bolsa estourou?", pausa:1500, resposta:"Vende, vende, vende! (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Qual o jogo favorito do filósofo?", pausa:1500, resposta:"Nietzsche for speed. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Quantas pessoas disputam o campeonato de natação filosofal?", pausa:1500, resposta:"Só sei que nadam seis. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Por que o Lênin desligou o telefone?", pausa:1500, resposta:"Porque era Trótsky. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Por que a Princesa Isabel não fazia limpeza de pele?", pausa:1500, resposta:"Pra não ter ex-cravos. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Qual o perfume mais detestado por Carlota Joaquina?", pausa:1500, resposta:"O Brasil Colônia. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Por que a França engordou depois da revolução?", pausa:1500, resposta:"Porque acabou o Antigo Regime. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Por que os partidos de direita não vão a festas?", pausa:1500, resposta:"Porque não conseguem se socializar. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Que autor o Harry Potter lê quando está doente?", pausa:1500, resposta:"Saramago. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Quem castrou Alves?", pausa:1500, resposta:"Machado de Assis, com Camões, em Castelo Branco. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Um matemático vê um padrão repetitivo e se encanta, qual o filme?", pausa:1500, resposta:"Atração fractal. (essa foi boa mesmo)" },
+
+{ pergunta:"Ei {{Nome}}, Para que serve a massa de ar?", pausa:1500, resposta:"Para fazer pastel de vento. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Qual é o volume de uma pizza de altura a e raio z?", pausa:1500, resposta:"Pi z z a. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, No casamento a noiva disse que era irrelevante ser ou não virgem, qual o filme?", pausa:1500, resposta:"Independente se dei. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Por que o alpinista ficou sem direção e sem sentido?", pausa:1500, resposta:"Porque foi para a montanha escalar. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Quando um matemático morre?", pausa:1500, resposta:"Quando perde as funções vitais. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, O que um nerd faz na aula de educação física?", pausa:1500, resposta:"Escalonamento. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, O que o matemático disse para o índio?", pausa:1500, resposta:"Oi, tupi. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, E quando o índio não respondeu, o que ele disse?", pausa:1500, resposta:"Diz oi, tupi. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Por que não é bom discutir com progressão aritmética ou geométrica?", pausa:1500, resposta:"Porque elas sempre têm razão. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Qual o volume de um leão morto?", pausa:1500, resposta:"É o volume da ex-fera. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Qual a função do goleiro?", pausa:1500, resposta:"Pará-bola. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, O que é pior do que cair um raio na cabeça?", pausa:1500, resposta:"Cair um diâmetro, porque são dois raios. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Que herói salvou o aluno da hipotenusa?", pausa:1500, resposta:"O Cateto Fantástico. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, O que o seno respondeu quando o cosseno bateu na porta?", pausa:1500, resposta:"Tan gente! (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Quantas crianças cabem numa circunferência?", pausa:1500, resposta:"Dois pi ralhos. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Por que o pinguim não erra o caminho de casa?", pausa:1500, resposta:"Porque usa coordenadas polares. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Como o Goku resolve sistemas?", pausa:1500, resposta:"Com a regra de Cramer-hame-há. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Qual estado vai dos racionais aos complexos?", pausa:1500, resposta:"O Pi ao i. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Qual cavaleiro da távola redonda é o mais redondo?", pausa:1500, resposta:"O Sir Cunferência. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Por que fazer aniversário faz bem?", pausa:1500, resposta:"Porque quem faz aniversário vive mais. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, O que é uma música mimosa?", pausa:1500, resposta:"Uma música famosa meio tom abaixo. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Que evidência mostra que mulheres gostam de carinho?", pausa:1500, resposta:"Adoram vestido carinho e sapato carinho. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, E por que elas não gostam de barata?", pausa:1500, resposta:"Porque detestam roupa barata e bolsa barata. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Centenas de formigas dançando na caneta, qual o filme?", pausa:1500, resposta:"In de pen dance day. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Menino pediu bexiga pra estourar, qual o filme?", pausa:1500, resposta:"Tó, estore. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Por que não se deve falar alto no laboratório?", pausa:1500, resposta:"Para não desconcentrar os reagentes. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Como um átomo de potássio ri?", pausa:1500, resposta:"KKKKKKKKK. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Que barulho faz um elétron caindo?", pausa:1500, resposta:"Planck, planck, planck. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Por que o fóton não pode fazer pizza?", pausa:1500, resposta:"Porque não tem massa. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, O que o Yoda disse para o Newton?", pausa:1500, resposta:"Que a massa vezes a aceleração com você esteja. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, O que a tomada 220 falou pra 110?", pausa:1500, resposta:"Calma, é só uma fase. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Onde moram os elétrons?", pausa:1500, resposta:"Na eletricidade. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, O que é um JPG?", pausa:1500, resposta:"Um GIF desanimado. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Por que o programador não morreu no naufrágio?", pausa:1500, resposta:"Porque usava ponto flutuante. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Quantos programadores trocam uma lâmpada?", pausa:1500, resposta:"Nenhum, isso é problema de hardware. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Qual santo ajuda quem esqueceu a senha?", pausa:1500, resposta:"São Login. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Por que o livro pula da página 403 para 405?", pausa:1500, resposta:"Porque a 404 não foi encontrada. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Qual a bebida favorita dos zumbis?", pausa:1500, resposta:"Johnie Walking Dead. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, O que é um pontinho rosa no Pokémon?", pausa:1500, resposta:"Um Pinkachu. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, O que é um pontinho azul no céu?", pausa:1500, resposta:"Um urublue. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, O que Hamlet disse ao ver dois insetos?", pausa:1500, resposta:"To be or not to be. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Por que o Skywalker esconde livros?", pausa:1500, resposta:"Porque não quer que a princesa Leia. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Por que livros de matemática são tristes?", pausa:1500, resposta:"Porque estão cheios de problemas. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, O que é estatística?", pausa:1500, resposta:"É a arte de torturar os números até que eles confessem. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Por que o estatístico morreu no rio?", pausa:1500, resposta:"Porque a média era 30cm, mas ele se afogou mesmo assim. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Você confia em estatísticas?", pausa:1500, resposta:"Claro, 42,5% delas são inventadas na hora. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Livros acreditam em vida após a morte?", pausa:1500, resposta:"Sim, em reencadernação. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Como a esposa do Seu Jorge chama ele em casa?", pausa:1500, resposta:"De Meu Jorge. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Você gosta de morango?", pausa:1500, resposta:"Eu gosto, a Camila Pitanga. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Como aumentar a renda fazendo crochê?", pausa:1500, resposta:"É só fazer crochê pra aumentar a renda mesmo. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Quem pula do barranco?", pausa:1500, resposta:"Eu pulo, o Luciano do Valle. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Quem volta pra casa ao anoitecer?", pausa:1500, resposta:"Meu irmão volta, mas o Seu Madruga não. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Quem gosta de chá de canela?", pausa:1500, resposta:"Eu gosto, a Geisy Arruda. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Seu carro é pago?", pausa:1500, resposta:"O meu é comprado, o da Nelly Furtado. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Quem constrói muralhas?", pausa:1500, resposta:"Eu construo, o Fernando Torres. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Quem enche o copo?", pausa:1500, resposta:"O Rincón enche, o Valderrama não. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Quem gosta de chiclete?", pausa:1500, resposta:"Eu gosto, o Carlinhos Bala. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Quem gosta de pão com margarina?", pausa:1500, resposta:"Eu gosto, o Guido Mantega. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Você é rico?", pausa:1500, resposta:"Eu não sou, mas o Josué. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Você costuma checar preços?", pausa:1500, resposta:"Eu não, mas a República Tcheca. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Você gosta de torresmo?", pausa:1500, resposta:"Eu gosto, mas o Kevin Bacon. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Seu carro é gasolina?", pausa:1500, resposta:"O meu é, e o do Vin Diesel também. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Quem pinta retratos?", pausa:1500, resposta:"Eu pinto, o Jânio Quadros. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Quem usa Havaianas?", pausa:1500, resposta:"Eu uso, a Tomb Raider. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Quem está dirigindo?", pausa:1500, resposta:"Eu estou, e o Frank Aguiar também. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Quem malhou tríceps?", pausa:1500, resposta:"Eu malhei, o Evaristo Costa. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Quem gosta de salvar pessoas?", pausa:1500, resposta:"Eu gosto, e o Maurício Mattar. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Sua moto é boa?", pausa:1500, resposta:"A minha é Yamaha, a da Daniela Suzuki. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Você usa drogas?", pausa:1500, resposta:"Eu não, mas o Cazuza. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Pode transportar laranja no rio Solimões?", pausa:1500, resposta:"Não sei, mas é melhor não dar bobeira. (essa foi ruim mesmo)" },
+{ pergunta:"Ei {{Nome}}, Você tem casa no campo?", pausa:1500, resposta:"Eu tenho, o Fernandinho Beira-Mar. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Você gosta do Quico?", pausa:1500, resposta:"Eu gosto, o Hugo Chávez. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Todo mundo tem problemas?", pausa:1500, resposta:"Até o Frankenstein. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Sua casa é grande?", pausa:1500, resposta:"A minha é pequena, a do Casagrande. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Por que colocaram cama elástica no Polo Norte?", pausa:1500, resposta:"Pro urso polar. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Quando você tira férias?", pausa:1500, resposta:"Ano que vem, a Marjorie Estiano. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Usar só lapiseira é bom?", pausa:1500, resposta:"Não, o lápis fica desapontado. (essa foi muito boa)" },
+{ pergunta:"Ei {{Nome}}, Quem conta as semanas?", pausa:1500, resposta:"Eu conto, a Cameron Diaz. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Tem muito alpinista no Everest?", pausa:1500, resposta:"Tem aos montes. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, O que você era na era feudal?", pausa:1500, resposta:"Eu era camponês, o Dudu Nobre. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Sua ascendência é qual?", pausa:1500, resposta:"A minha é Asteca, a do Tim Maia. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Suas camisas são que tamanho?", pausa:1500, resposta:"As minhas são P, as do Mister M. (essa foi boa)" },
+{ pergunta:"Ei {{Nome}}, Você gosta de trem?", pausa:1500, resposta:"Eu gosto, e o James Bond também. (essa foi boa mesmo)" },
+{ pergunta:"Ei {{Nome}}, Você é brasileiro?", pausa:1500, resposta:"Eu sou, o Renato Russo. (essa foi boa)" },
 
 ];
 

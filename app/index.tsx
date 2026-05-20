@@ -3,18 +3,35 @@ import BottomSheet, { BottomSheetModalProvider, BottomSheetScrollView } from '@g
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Asset } from "expo-asset";
 import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
+import Constants from "expo-constants";
 import * as FileSystem from "expo-file-system/legacy";
 import { activateKeepAwakeAsync, deactivateKeepAwake, isAvailableAsync as keepAwakeDisponivelAsync } from "expo-keep-awake";
 import * as Localization from "expo-localization";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
 import * as Speech from "expo-speech";
-import { addDoc, collection, collectionGroup, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, setDoc, updateDoc, where } from "firebase/firestore";
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+} from "firebase/auth";
+import { collection, collectionGroup, doc, orderBy, query, serverTimestamp, where } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef, uploadString } from "firebase/storage";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, KeyboardAvoidingView, Platform } from "react-native";
 import type { AssinaturaUsuario, PlanoUsuario } from "../data/configPlanos";
-import { db, storage } from "../firebase";
+import { auth, db, storage } from "../firebase";
+import {
+  addDocWithLog as addDoc,
+  deleteDocWithLog as deleteDoc,
+  getDocWithLog as getDoc,
+  onSnapshotWithLog as onSnapshot,
+  setDocWithLog as setDoc,
+  setFirestoreDebugUid,
+  updateDocWithLog as updateDoc,
+} from "../utils/firestoreDebug";
 import {
   ativarPlano,
   carregarAssinaturaLocal,
@@ -87,6 +104,7 @@ import ViagensScreen from "./ofertas/ViagensScreen";
 // ==========================================
 const PERSONALIDADE_ATUAL = "psico"; // leve | psico
 const MODO_REVISAO_XINGAMENTOS = false;
+const TERMO_VERSAO_ATUAL = `xingamentos-${String(Constants.nativeAppVersion || "1")}-${String(Constants.nativeBuildVersion || "1")}`;
 
 // ===============================
 //  BENEFÍCIOS PRO
@@ -159,9 +177,15 @@ const mapaNoturnoStyle = [
   }
 ];
 async function geocodeEndereco(endereco: string) {
-  const response = await fetch(
+  const geocodeQuery = String(endereco || "").trim();
+  const url =
     "https://api.openrouteservice.org/geocode/search?text=" +
-      encodeURIComponent(endereco),
+    encodeURIComponent(geocodeQuery);
+  console.log("[GEOCODE_QUERY]", geocodeQuery);
+  console.log("[GEOCODE_URL]", url);
+
+  const response = await fetch(
+    url,
     {
       headers: {
         Authorization: "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImEyODU2NWExYzJiNTQ4MDVhMWMyYjQ0YjkzMTYxMDhlIiwiaCI6Im11cm11cjY0In0=",
@@ -170,6 +194,8 @@ async function geocodeEndereco(endereco: string) {
   );
 
   const data = await response.json();
+  const primeiroResultado = Array.isArray(data?.features) ? data.features[0] : null;
+  console.log("[GEOCODE_RESULT]", primeiroResultado);
 
   if (!data.features || data.features.length === 0) {
     return null;
@@ -248,10 +274,16 @@ type Oferta = {
   valor:number;
   status:"ativa" | "aceita"
 }
-const VOICE_SERVER_URL = String(
-  (globalThis as any)?.process?.env?.EXPO_PUBLIC_VOICE_SERVER_URL ||
-  "https://insanegps.com/speak"
-).trim() || "https://insanegps.com/speak";
+const VOICE_SERVER_URL_PADRAO = "https://insanegps.com/speak";
+const VOICE_SERVER_URL_ANTIGO = "https://gpsinsane.onrender.com/speak";
+const VOICE_SERVER_URL_ENV_RAW = String(
+  (globalThis as any)?.process?.env?.EXPO_PUBLIC_VOICE_SERVER_URL || ""
+).trim();
+const VOICE_SERVER_URL = (
+  VOICE_SERVER_URL_ENV_RAW === VOICE_SERVER_URL_ANTIGO
+    ? VOICE_SERVER_URL_PADRAO
+    : (VOICE_SERVER_URL_ENV_RAW || VOICE_SERVER_URL_PADRAO)
+).trim() || VOICE_SERVER_URL_PADRAO;
 
 const RISADA_TOKEN_POR_AUDIO = {
   "__RISADA_FORTE__": require("../assets/audio/risadas/risada_forte.wav"),
@@ -407,7 +439,8 @@ function montarFraseFinal(xingamento:string, instrucao?:string){
   }
 
   if(parteInstrucao && !parteXingamento){
-    return `${abertura ? abertura + " " : ""}${parteInstrucao}`.trim();
+    // em instrução pura, não adiciona abertura para evitar atrasar/confundir manobra
+    return parteInstrucao;
   }
 
   return `${abertura ? abertura + " " : ""}${parteXingamento}`.trim();
@@ -661,16 +694,7 @@ useEffect(()=>{
     let tocouMoeda = await tocarSomMoeda();
     if(!tocouMoeda && somRadar){
       try{
-        if(USAR_TTS_SISTEMA_PRIMARIO){
-          Speech.stop();
-          Speech.speak(t("novaOfertaPerto"), {
-            language: localePorIdioma(idiomaAtual),
-            pitch: 1.15,
-            rate: 1.05,
-          });
-        }else{
-          falar(t("novaOfertaPerto"));
-        }
+        falar(t("novaOfertaPerto"));
       }catch(error){
         console.log("Erro ao tocar alerta de voz da oferta:", error);
       }
@@ -876,10 +900,37 @@ async function prepararMediaUrlMensagem(mensagem:any){
  async function enviarMensagemChat(payload:any){
 
 if(!chatOferta) return;
+if(chatBloqueadoPorMimNoContexto(chatOferta, chatMensagens, usuarioId)){
+  Alert.alert(
+    "Chat indisponível",
+    "Você bloqueou este usuário. Desbloqueie para voltar a conversar."
+  );
+  return;
+}
+
+if(chatFuiBloqueadoNoContexto(chatOferta, chatMensagens, usuarioId)){
+  Alert.alert(
+    "Chat indisponível",
+    "Este usuário bloqueou você."
+  );
+  return;
+}
+
+const bloqueioAtual = await sincronizarBloqueioChatAtual(chatOferta, chatMensagens);
 if(chatBloqueadoParaUsuario(chatOferta, chatMensagens, usuarioId)){
   Alert.alert(
     tComFallback("chatBloqueadoTitulo", "Chat bloqueado"),
     tComFallback("chatBloqueadoRecusa", "Sua solicitação foi recusada nesta oferta. Você não pode enviar novas mensagens.")
+  );
+  return;
+}
+
+if(bloqueioAtual.euBloqueei || bloqueioAtual.fuiBloqueado){
+  Alert.alert(
+    "Chat indisponível",
+    bloqueioAtual.fuiBloqueado
+      ? "Este usuário bloqueou você."
+      : "Você bloqueou este usuário. Desbloqueie para voltar a conversar."
   );
   return;
 }
@@ -893,6 +944,15 @@ const textoNormalizado =
   typeof mensagem?.texto === "string"
     ? mensagem.texto
     : String(mensagem?.texto || "");
+const ofertaIdAtual = String(chatOferta?.id || "");
+const moderacao = tipo === "texto"
+  ? avaliarModeracaoMensagemTexto(textoNormalizado, ofertaIdAtual)
+  : { bloquear: false, ocultar: false, motivo: "" };
+
+if(moderacao.bloquear){
+  Alert.alert("Mensagem bloqueada", "Essa mensagem viola as regras do chat e não foi enviada.");
+  return;
+}
 
 const mediaUrlFinal = await prepararMediaUrlMensagem(mensagem);
 if((tipo === "imagem" || tipo === "audio") && !mediaUrlFinal){
@@ -918,9 +978,21 @@ try {
       autorNome: perfilAtualMini.nome || usuarioId,
       autorFoto: perfilAtualMini.foto || null,
       ofertaId:chatOferta.id,
-      criadoEm:Date.now()
+      criadoEm:Date.now(),
+      reported:false,
+      hiddenByModeration:!!moderacao.ocultar,
+      moderated:!!moderacao.ocultar,
+      deletedByAdmin:false,
+      moderationReason:moderacao.motivo || null,
+      blockedForAuthor:chatBloqueioManual.euBloqueei && chatBloqueioManual.outroId
+        ? { [String(chatBloqueioManual.outroId)]: Date.now() }
+        : {}
     }
   );
+
+  if(moderacao.ocultar){
+    Alert.alert("Mensagem enviada com restrição", "A mensagem foi marcada automaticamente para revisão de moderação.");
+  }
 } catch(e){
   console.log("Erro ao enviar mensagem:", e);
 }
@@ -964,14 +1036,24 @@ if(DEBUG_BRAIN){
  },[]);
 
  async function buscarCoordenadas(endereco:string){
+  const consulta = String(endereco || "").trim();
+  if(!consulta) return null;
+
   try{
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(String(endereco || "").trim())}&countrycodes=br&limit=1&addressdetails=1`;
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(consulta)}&limit=1&addressdetails=1`;
+    console.log("[GEOCODE_QUERY]", consulta);
+    console.log("[GEOCODE_URL]", url);
 
     const response = await fetch(url, {
-      headers:{ "User-Agent":"gps-clean-app" }
+      headers:{
+        "User-Agent":"gps-clean-app",
+        "Accept":"application/json"
+      }
     });
 
     const json = await response.json();
+    const primeiroResultado = Array.isArray(json) ? json[0] : null;
+    console.log("[GEOCODE_RESULT]", primeiroResultado);
 
     if(Array.isArray(json) && json.length > 0){
       return {
@@ -980,9 +1062,41 @@ if(DEBUG_BRAIN){
       };
     }
 
+    const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(consulta)}&limit=1`;
+    console.log("[GEOCODE_URL]", photonUrl);
+    const photonRes = await fetch(photonUrl, { headers:{ "Accept":"application/json" } });
+    const photonJson = await photonRes.json();
+    const feature = Array.isArray(photonJson?.features) ? photonJson.features[0] : null;
+    console.log("[GEOCODE_RESULT]", feature || null);
+
+    const lngPhoton = Number(feature?.geometry?.coordinates?.[0]);
+    const latPhoton = Number(feature?.geometry?.coordinates?.[1]);
+    if(Number.isFinite(latPhoton) && Number.isFinite(lngPhoton)){
+      return { lat: latPhoton, lng: lngPhoton };
+    }
+
+    const geoDispositivo = await Location.geocodeAsync(consulta);
+    if(Array.isArray(geoDispositivo) && geoDispositivo.length > 0){
+      return {
+        lat: Number(geoDispositivo[0].latitude),
+        lng: Number(geoDispositivo[0].longitude)
+      };
+    }
+
     return null;
   }catch(e){
     console.log("Erro geocode", e);
+
+    try{
+      const geoDispositivo = await Location.geocodeAsync(consulta);
+      if(Array.isArray(geoDispositivo) && geoDispositivo.length > 0){
+        return {
+          lat: Number(geoDispositivo[0].latitude),
+          lng: Number(geoDispositivo[0].longitude)
+        };
+      }
+    }catch{}
+
     return null;
   }
 }
@@ -1324,8 +1438,8 @@ function comentarioRankingPiada(piada:any){
 }
 
 function obterDelayModoComico() {
-  const MIN_MS = 2 * 60 * 1000;
-  const MAX_MS = 4 * 60 * 1000;
+  const MIN_MS = 90 * 1000;
+  const MAX_MS = 150 * 1000;
   return MIN_MS + Math.floor(Math.random() * (MAX_MS - MIN_MS + 1));
 }
 
@@ -1368,7 +1482,7 @@ function falarPiadaComica() {
   const textoPergunta = String(bloco?.textoPergunta || "").trim();
   const textoResposta = String(bloco?.textoResposta || "").trim();
   const textoComentario = String(bloco?.textoComentario || "").trim();
-  const comentarioRanking = comentarioRankingPiada(piada);
+  const comentarioRanking = textoComentario ? "" : comentarioRankingPiada(piada);
   const semRisada = comentarioIndicaSemRisada(textoComentario);
   const textoRisada = semRisada
     ? ""
@@ -1402,9 +1516,9 @@ function falarPiadaComica() {
       contexto: "modo_comico"
     });
     if (textoRisada) {
-      filaAudioRef.current.push("__PAUSE_160__");
-      filaAudioRef.current.push(textoRisada);
-    }
+  filaAudioRef.current.push("__PAUSE_40__");
+  filaAudioRef.current.push(textoRisada);
+}
   } else {
     // fallback: pergunta/resposta compactadas, mas sempre com ranking antes da risada
     filaAudioRef.current.push({
@@ -1648,7 +1762,14 @@ const inputStyle = {
 };
 
 type VoiceContext = "modo_comico" | "rota_critica" | "instrucao" | "erro_rota";
-type AudioQueueItem = string | { texto: string; contexto: VoiceContext };
+type AudioQueueItem = string | {
+  texto: string;
+  contexto: VoiceContext;
+  motivo?: VoiceContext;
+  criadoEm?: number;
+  ehXingamento?: boolean;
+  tentativasCustom?: number;
+};
 
 const ultimoComico = useRef(0);
 const timerComico = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1656,6 +1777,7 @@ const timerComico = useRef<ReturnType<typeof setTimeout> | null>(null);
 const falandoRef = useRef(false);
 const filaAudioRef = useRef<AudioQueueItem[]>([]);
 const reproduzindoRef = useRef(false);
+const contextoAudioAtualRef = useRef<VoiceContext | null>(null);
 
 const modoComicoAtivoRef = useRef(false);
 const executandoPiadaComicaRef = useRef(false);
@@ -1682,6 +1804,8 @@ const stepMonitoradoRef = useRef(-1);
 const stepMuitoLongeCountRef = useRef(0);
 const foraRotaCountRef = useRef(0);
 const ultimoXingamentoForaRotaRef = useRef(0);
+const xingamentosNoEventoForaRotaRef = useRef(0);
+const forcarProximosNivel4Ref = useRef(0);
 const recalculandoRotaRef = useRef(false);
 const silencioAposRecalculoRef = useRef(0);
 const ultimoHeadingValidoRef = useRef(0);
@@ -1738,6 +1862,33 @@ const [origemOferta,setOrigemOferta] = useState("");
 const [destinoOferta,setDestinoOferta] = useState("");
 const [tecladoAberto,setTecladoAberto] = useState(false);
 const [usuarioId, setUsuarioId] = useState("");
+const [usuarioAnonimoId, setUsuarioAnonimoId] = useState("");
+const [authUid, setAuthUid] = useState("");
+const [authEmail, setAuthEmail] = useState("");
+const [authSenha, setAuthSenha] = useState("");
+const [authEmailConfirmacao, setAuthEmailConfirmacao] = useState("");
+const [authSenhaConfirmacao, setAuthSenhaConfirmacao] = useState("");
+const [authSenhaVisivel, setAuthSenhaVisivel] = useState(false);
+const [authSenhaConfirmacaoVisivel, setAuthSenhaConfirmacaoVisivel] = useState(false);
+const [authNome, setAuthNome] = useState("");
+const [authErro, setAuthErro] = useState("");
+const [authCarregando, setAuthCarregando] = useState(true);
+const [authProcessando, setAuthProcessando] = useState(false);
+const [authModalVisivel, setAuthModalVisivel] = useState(false);
+const [authModoCadastro, setAuthModoCadastro] = useState(false);
+const [authMotivoBloqueio, setAuthMotivoBloqueio] = useState("");
+const googleExtra = ((Constants as any)?.expoConfig?.extra || {}) as Record<string, any>;
+const androidClientId = String((globalThis as any)?.process?.env?.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || googleExtra?.googleAndroidClientId || "").trim();
+const googleLoginDisponivel = false;
+const entrarComGoogle = () => {
+  Alert.alert("Login indisponível", "Login Google será ativado em uma próxima versão.");
+};
+useEffect(() => {
+  if (!__DEV__) return;
+  if (!androidClientId) {
+    console.warn("GOOGLE_AUTH_ANDROID_CLIENT_ID não configurado; login Google permanece desativado.");
+  }
+}, [androidClientId]);
 const [barraOfertas,setBarraOfertas] = useState(false);
 const [abaOfertas,setAbaOfertas] = useState("procurar");
 const [modoSelecionar,setModoSelecionar] = useState<"origem" | "destino" | null>(null);
@@ -1745,9 +1896,23 @@ const [chatVisivel,setChatVisivel] = useState(false);
 const [chatMensagens,setChatMensagens] = useState<any[]>([]);
 const [chatTexto,setChatTexto] = useState("");
 const [chatOferta,setChatOferta] = useState<any>(null);
+const [usuariosBloqueados, setUsuariosBloqueados] = useState<Record<string, number>>({});
+const [usuariosQueMeBloquearam, setUsuariosQueMeBloquearam] = useState<Record<string, number>>({});
+const [chatBloqueioManual, setChatBloqueioManual] = useState<{ outroId: string; euBloqueei: boolean; fuiBloqueado: boolean }>({
+  outroId: "",
+  euBloqueei: false,
+  fuiBloqueado: false,
+});
+const spamHistoricoRef = useRef<Record<string, { texto: string; at: number; rajada: number }>>({});
 const chatBloqueado = useMemo(
-  () => chatBloqueadoParaUsuario(chatOferta, chatMensagens, usuarioId),
-  [chatOferta, chatMensagens, usuarioId]
+  () => (
+    chatBloqueadoParaUsuario(chatOferta, chatMensagens, usuarioId)
+    || chatBloqueioManual.euBloqueei
+    || chatBloqueioManual.fuiBloqueado
+    || chatFuiBloqueadoNoContexto(chatOferta, chatMensagens, usuarioId)
+    || chatBloqueadoPorMimNoContexto(chatOferta, chatMensagens, usuarioId)
+  ),
+  [chatOferta, chatMensagens, usuarioId, chatBloqueioManual, usuariosBloqueados, usuariosQueMeBloquearam]
 );
 const [ofertaNotificacaoPendenteId, setOfertaNotificacaoPendenteId] = useState<string | null>(null);
 const [abaAtiva, setAbaAtiva] = useState<"procurar" | "oferecer" | "viagens" | "mensagens" | "perfil" | null>(null);
@@ -1773,6 +1938,295 @@ const [naoLidasTotal, setNaoLidasTotal] = useState(0);
 const mensagensNotificadasRef = useRef<Set<string>>(new Set());
 const conversasInicializadasRef = useRef(false);
 
+const usuarioAutenticado = !!String(authUid || "").trim();
+
+function mapearErroAuthMobile(error:any): string {
+  const raw = String(error?.code || error?.message || "").toLowerCase();
+  if(raw.includes("auth/invalid-email")) return "E-mail invalido.";
+  if(raw.includes("auth/missing-password")) return "Informe a senha.";
+  if(raw.includes("auth/weak-password")) return "A senha precisa ter pelo menos 6 caracteres.";
+  if(raw.includes("auth/email-already-in-use")) return "Este e-mail ja esta em uso.";
+  if(raw.includes("auth/invalid-credential") || raw.includes("auth/wrong-password") || raw.includes("auth/user-not-found")) return "E-mail ou senha incorretos.";
+  if(raw.includes("auth/network-request-failed")) return "Falha de rede. Verifique sua conexao.";
+  return "Nao foi possivel autenticar agora.";
+}
+
+function abrirTelaLogin(motivo:string){
+  setAuthMotivoBloqueio(String(motivo || "").trim());
+  setAuthErro("");
+  setAuthModalVisivel(true);
+}
+
+function exigirLoginParaAcao(motivo:string): boolean {
+  if(usuarioAutenticado) return true;
+  abrirTelaLogin(motivo);
+  return false;
+}
+
+async function entrarComEmailSenha(){
+  const email = String(authEmail || "").trim();
+  const senha = String(authSenha || "");
+  if(!email || !senha){
+    setAuthErro("Informe e-mail e senha.");
+    return;
+  }
+
+  setAuthProcessando(true);
+  setAuthErro("");
+  try{
+    await signInWithEmailAndPassword(auth, email, senha);
+    setAuthModalVisivel(false);
+  }catch(error){
+    setAuthErro(mapearErroAuthMobile(error));
+  }finally{
+    setAuthProcessando(false);
+  }
+}
+
+async function cadastrarComEmailSenha(){
+  const email = String(authEmail || "").trim();
+  const emailConfirmacao = String(authEmailConfirmacao || "").trim();
+  const senha = String(authSenha || "");
+  const senhaConfirmacao = String(authSenhaConfirmacao || "");
+  const nome = String(authNome || "").trim();
+
+  if(!email || !emailConfirmacao || !senha || !senhaConfirmacao){
+    setAuthErro("Preencha e confirme e-mail e senha.");
+    return;
+  }
+
+  if(email !== emailConfirmacao){
+    setAuthErro("Os e-mails nao coincidem.");
+    return;
+  }
+
+  if(senha !== senhaConfirmacao){
+    setAuthErro("As senhas nao coincidem.");
+    return;
+  }
+
+  if(senha.length < 6){
+    setAuthErro("A senha precisa ter pelo menos 6 caracteres.");
+    return;
+  }
+
+  setAuthProcessando(true);
+  setAuthErro("");
+  try{
+    const cred = await createUserWithEmailAndPassword(auth, email, senha);
+    if(nome){
+      await updateProfile(cred.user, { displayName: nome });
+    }
+
+    await setDoc(doc(db, "usuarios", cred.user.uid), {
+      uid: cred.user.uid,
+      email: String(cred.user.email || "").trim() || null,
+      nome: nome || String(cred.user.displayName || "").trim(),
+      foto: String(cred.user.photoURL || "").trim(),
+      atualizadoEmCliente: Date.now(),
+      atualizadoEm: serverTimestamp(),
+    }, { merge: true });
+
+    setAuthModalVisivel(false);
+  }catch(error){
+    setAuthErro(mapearErroAuthMobile(error));
+  }finally{
+    setAuthProcessando(false);
+  }
+}
+
+async function sairContaAuth(){
+  try{
+    await signOut(auth);
+  }catch(error){
+    console.log("Erro ao sair da conta:", error);
+  }
+}
+
+function normalizarMapaBloqueio(valor: any): Record<string, number> {
+  if (!valor || typeof valor !== "object") return {};
+  return Object.keys(valor).reduce((acc: Record<string, number>, id: string) => {
+    const chave = String(id || "").trim();
+    if (!chave) return acc;
+    const ts = Number((valor as any)[id]);
+    acc[chave] = Number.isFinite(ts) ? ts : Date.now();
+    return acc;
+  }, {});
+}
+function obterOutroUsuarioChat(oferta: any, mensagens: any[], uid: string): string {
+  const eu = String(uid || "").trim();
+  const lista = Array.isArray(mensagens) ? mensagens : [];
+
+  const candidatoMensagem = lista
+    .flatMap((m: any) => [m?.autor, m?.solicitanteId, m?.destinatarioId])
+    .map((id: any) => String(id || "").trim())
+    .find((id: string) => !!id && id !== eu);
+
+  const criador = String(oferta?.criadorId || "").trim();
+  if (criador && criador !== eu) return criador;
+
+  const solicitacoes = Array.isArray(oferta?.solicitacoes)
+    ? oferta.solicitacoes
+    : (Array.isArray(oferta?.solicitantes) ? oferta.solicitantes : []);
+
+  const solicitante = solicitacoes
+    .map((id: any) => String(id || "").trim())
+    .find((id: string) => !!id && id !== eu);
+  if (solicitante) return solicitante;
+
+  const aceitaPor = String(oferta?.aceitaPor || "").trim();
+  if (aceitaPor && aceitaPor !== eu) return aceitaPor;
+
+  return "";
+}
+
+function obterParticipantesChat(oferta: any, mensagens: any[], uid: string): string[] {
+  const eu = String(uid || "").trim();
+  const ids = new Set<string>();
+
+  const lista = Array.isArray(mensagens) ? mensagens : [];
+  lista.forEach((m: any) => {
+    [m?.autor, m?.solicitanteId, m?.destinatarioId].forEach((id: any) => {
+      const v = String(id || "").trim();
+      if (v) ids.add(v);
+    });
+  });
+
+  [oferta?.criadorId, oferta?.aceitaPor].forEach((id: any) => {
+    const v = String(id || "").trim();
+    if (v) ids.add(v);
+  });
+
+  const solicitacoes = Array.isArray(oferta?.solicitacoes)
+    ? oferta.solicitacoes
+    : (Array.isArray(oferta?.solicitantes) ? oferta.solicitantes : []);
+  solicitacoes.forEach((id: any) => {
+    const v = String(id || "").trim();
+    if (v) ids.add(v);
+  });
+
+  const reservas = Array.isArray(oferta?.reservas) ? oferta.reservas : [];
+  reservas.forEach((r: any) => {
+    const v = String(r?.passageiroId || r?.usuarioId || "").trim();
+    if (v) ids.add(v);
+  });
+
+  ids.delete(eu);
+  return Array.from(ids);
+}
+
+function chatBloqueadoPorMimNoContexto(oferta: any, mensagens: any[], uid: string): boolean {
+  const participantes = obterParticipantesChat(oferta, mensagens, uid);
+  return participantes.some((id) => !!usuariosBloqueados[String(id)]);
+}
+
+function chatFuiBloqueadoNoContexto(oferta: any, mensagens: any[], uid: string): boolean {
+  const participantes = obterParticipantesChat(oferta, mensagens, uid);
+  return participantes.some((id) => !!usuariosQueMeBloquearam[String(id)]);
+}
+
+function usuarioBloqueadoPorMim(outroId: any): boolean {
+  const id = String(outroId || "").trim();
+  if (!id) return false;
+  return !!usuariosBloqueados[id];
+}
+
+async function usuarioMeBloqueou(outroId: any): Promise<boolean> {
+  const id = String(outroId || "").trim();
+  if (!id || !usuarioId) return false;
+  try {
+    const docId = `${String(id)}__${String(usuarioId)}`;
+    const snap = await getDoc(doc(db, "blockedUsers", docId));
+    return snap.exists();
+  } catch {
+    return false;
+  }
+}
+
+async function sincronizarBloqueioChatAtual(oferta: any, mensagens: any[] = []) {
+  const uidAtual = String(usuarioId || "");
+  const outroPreferido = obterOutroUsuarioChat(oferta, mensagens, uidAtual);
+  const participantes = obterParticipantesChat(oferta, mensagens, uidAtual);
+  const candidatos = Array.from(new Set([
+    String(outroPreferido || "").trim(),
+    ...participantes.map((id) => String(id || "").trim()),
+  ].filter(Boolean)));
+
+  const idBloqueadoPorMim = candidatos.find((id) => usuarioBloqueadoPorMim(id)) || "";
+
+  let idQueMeBloqueou = candidatos.find((id) => !!usuariosQueMeBloquearam[String(id)]) || "";
+  if (!idQueMeBloqueou) {
+    for (const id of candidatos) {
+      const bloqueou = await usuarioMeBloqueou(id);
+      if (bloqueou) {
+        idQueMeBloqueou = id;
+        break;
+      }
+    }
+  }
+
+  const euBloqueei = !!idBloqueadoPorMim;
+  const fuiBloqueado = !!idQueMeBloqueou;
+  const outroId = idBloqueadoPorMim || idQueMeBloqueou || String(outroPreferido || "").trim();
+  const estado = { outroId, euBloqueei, fuiBloqueado };
+  setChatBloqueioManual(estado);
+  return estado;
+}
+
+function avaliarModeracaoMensagemTexto(textoBruto: string, ofertaId: string) {
+  const texto = String(textoBruto || "").trim();
+  if (!texto) return { bloquear: false, ocultar: false, motivo: "" };
+
+  const normalizado = texto.toLowerCase().replace(/\s+/g, " ").trim();
+  const possuiLink = /(https?:\/\/|www\.)/i.test(texto);
+  const linkSuspeito = /(bit\.ly|tinyurl|t\.co|grabify|rebrand\.ly|discord\.gift|free\-nitro)/i.test(texto);
+  if (possuiLink && linkSuspeito) {
+    return { bloquear: true, ocultar: false, motivo: "link_suspeito" };
+  }
+
+  const termosProibidos = [
+    "nudez",
+    "conteudo ilegal",
+    "ameaça",
+    "ameaças",
+    "gore",
+    "pedofilia",
+    "cp",
+  ];
+  if (termosProibidos.some((termo) => normalizado.includes(termo))) {
+    return { bloquear: true, ocultar: false, motivo: "termo_proibido" };
+  }
+
+  const chave = `${String(usuarioId || "anon")}::${String(ofertaId || "oferta")}`;
+  const agora = Date.now();
+  const historico = spamHistoricoRef.current[chave] || { texto: "", at: 0, rajada: 0 };
+
+  const repeticaoCurta = historico.texto && historico.texto === normalizado && (agora - historico.at) <= 45000;
+  let rajadaAtual = historico.rajada;
+  if ((agora - historico.at) <= 7000) {
+    rajadaAtual += 1;
+  } else {
+    rajadaAtual = 1;
+  }
+
+  spamHistoricoRef.current[chave] = {
+    texto: normalizado,
+    at: agora,
+    rajada: rajadaAtual,
+  };
+
+  const minhasRecentes = (Array.isArray(chatMensagens) ? chatMensagens : [])
+    .slice(-5)
+    .filter((m: any) => String(m?.autor || "") === String(usuarioId || ""));
+  const excessoSeguidas = minhasRecentes.length >= 4;
+
+  if (repeticaoCurta || rajadaAtual >= 5 || excessoSeguidas) {
+    return { bloquear: false, ocultar: true, motivo: repeticaoCurta ? "spam_repetitivo" : "excesso_mensagens" };
+  }
+
+  return { bloquear: false, ocultar: false, motivo: "" };
+}
+
 function resumoMensagemNotificacao(dados:any){
   const tipo = String(dados?.tipo || "texto");
   const texto = typeof dados?.texto === "string"
@@ -1795,6 +2249,9 @@ function persistirConversasOcultas(meta:Record<string, number>){
 }
 
 useEffect(()=>{
+
+  setFirestoreDebugUid(String(usuarioId || ""));
+
   let ativo = true;
 
   async function carregarConversasOcultas(){
@@ -1838,6 +2295,66 @@ useEffect(()=>{
     ativo = false;
   };
 },[usuarioId]);
+
+useEffect(()=>{
+  if(!usuarioId) return;
+
+  const qBloqueios = query(
+    collection(db, "blockedUsers"),
+    where("blockerId", "==", String(usuarioId))
+  );
+
+  const unsubscribe = onSnapshot(qBloqueios, (snapshot)=>{
+    const mapa:Record<string, number> = {};
+    snapshot.forEach((item)=>{
+      const dados:any = item.data() || {};
+      const blockedId = String(dados?.blockedId || "").trim();
+      if(!blockedId) return;
+
+      const criado = dados?.createdAt;
+      const createdAtMs = criado && typeof criado?.toMillis === "function"
+        ? Number(criado.toMillis())
+        : Date.now();
+
+      mapa[blockedId] = createdAtMs;
+    });
+    setUsuariosBloqueados(mapa);
+  }, ()=>{
+    setUsuariosBloqueados({});
+  });
+
+  return ()=>unsubscribe();
+}, [usuarioId]);
+
+useEffect(()=>{
+  if(!usuarioId) return;
+
+  const qBloqueiosContraMim = query(
+    collection(db, "blockedUsers"),
+    where("blockedId", "==", String(usuarioId))
+  );
+
+  const unsubscribe = onSnapshot(qBloqueiosContraMim, (snapshot)=>{
+    const mapa:Record<string, number> = {};
+    snapshot.forEach((item)=>{
+      const dados:any = item.data() || {};
+      const blockerId = String(dados?.blockerId || "").trim();
+      if(!blockerId) return;
+
+      const criado = dados?.createdAt;
+      const createdAtMs = criado && typeof criado?.toMillis === "function"
+        ? Number(criado.toMillis())
+        : Date.now();
+
+      mapa[blockerId] = createdAtMs;
+    });
+    setUsuariosQueMeBloquearam(mapa);
+  }, ()=>{
+    setUsuariosQueMeBloquearam({});
+  });
+
+  return ()=>unsubscribe();
+}, [usuarioId]);
 
 useEffect(()=>{
   Notifications.requestPermissionsAsync().catch((error)=>{
@@ -1920,7 +2437,12 @@ function mensagemEhVisivelParaUsuario(mensagem:any, oferta:any, uid:any){
   const id = String(uid || "").trim();
   if(!id || !mensagem || !oferta) return false;
 
+  if(mensagem?.deletedByAdmin) return false;
+  if(mensagem?.hiddenByModeration && String(mensagem?.autor || "") !== id) return false;
+
   const autorId = String(mensagem?.autor || "").trim();
+  const bloqueadosAutor = normalizarMapaBloqueio(mensagem?.blockedForAuthor || {});
+  if(!!bloqueadosAutor[id]) return false;
   const solicitanteId = String(mensagem?.solicitanteId || "").trim();
   const destinatarioId = String(mensagem?.destinatarioId || "").trim();
   const acao = String(mensagem?.acao || "").trim();
@@ -2026,8 +2548,40 @@ if(bucketAtual.involved && naoLida){
     // Vibração para todos os tipos de mensagem nova
     Vibration.vibrate(ehMensagemDoCriador ? [0, 140, 80, 180] : [0, 80]);
 
-    // Som in-app imediato (não depende de canal Android nem modo foreground)
-    tocarSomMoeda().catch(()=>{});
+    // Som in-app apenas se oferta está próxima (não toca para ofertas distantes)
+    (async () => {
+      try {
+        const lat = Number(oferta?.origem?.lat);
+        const lng = Number(oferta?.origem?.lng);
+        if(!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        
+        const raioKm = Number(raioNotificacaoKm || 0);
+        if(!Number.isFinite(raioKm) || raioKm <= 0) return;
+        
+        let posicao:any = null;
+        try{
+          posicao = await Location.getLastKnownPositionAsync();
+          if(!posicao){
+            posicao = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            });
+          }
+        }catch(error){
+          return;
+        }
+        
+        const userLat = Number(posicao?.coords?.latitude);
+        const userLng = Number(posicao?.coords?.longitude);
+        if(!Number.isFinite(userLat) || !Number.isFinite(userLng)) return;
+        
+        const distanciaM = getDistanciaMetros(userLat, userLng, lat, lng);
+        if(Number.isFinite(distanciaM) && distanciaM <= raioKm * 1000) {
+          tocarSomMoeda().catch(()=>{});
+        }
+      }catch(error){
+        // silenciar erro
+      }
+    })();
 
     Notifications.scheduleNotificationAsync({
       content: {
@@ -2069,7 +2623,7 @@ conversasInicializadasRef.current = true;
 
 return ()=>unsubscribe()
 
-},[ofertas,usuarioId,chatVisivel,chatOferta?.id,conversasOcultasSet,conversasOcultasMeta])
+},[ofertas,usuarioId,chatVisivel,chatOferta?.id,conversasOcultasSet,conversasOcultasMeta,usuariosBloqueados])
 
 useEffect(()=>{
 
@@ -2091,7 +2645,12 @@ const criadorIdOferta = String(chatOferta?.criadorId || "").trim();
 function mensagemEhVisivelNoChat(dadosMsg:any){
   if(!usuarioIdAtual) return false;
 
+  if(dadosMsg?.deletedByAdmin) return false;
+  if(dadosMsg?.hiddenByModeration && String(dadosMsg?.autor || "") !== usuarioIdAtual) return false;
+
   const autorId = String(dadosMsg?.autor || "").trim();
+  const bloqueadosAutor = normalizarMapaBloqueio(dadosMsg?.blockedForAuthor || {});
+  if(!!bloqueadosAutor[usuarioIdAtual]) return false;
   const solicitanteId = String(dadosMsg?.solicitanteId || "").trim();
   const destinatarioId = String(dadosMsg?.destinatarioId || "").trim();
   const acao = String(dadosMsg?.acao || "").trim();
@@ -2145,7 +2704,18 @@ snapshot.forEach((mensagemDoc)=>{
 
 return ()=>unsubscribe()
 
-},[chatOferta, chatVisivel, usuarioId, conversasOcultasMeta])
+},[chatOferta, chatVisivel, usuarioId, conversasOcultasMeta, usuariosBloqueados])
+
+useEffect(()=>{
+  if(!chatVisivel || !chatOferta) {
+    setChatBloqueioManual({ outroId: "", euBloqueei: false, fuiBloqueado: false });
+    return;
+  }
+
+  sincronizarBloqueioChatAtual(chatOferta, chatMensagens).catch(()=>{
+    setChatBloqueioManual({ outroId: "", euBloqueei: false, fuiBloqueado: false });
+  });
+}, [chatVisivel, chatOferta, chatMensagens, usuariosBloqueados, usuariosQueMeBloquearam]);
 
 useEffect(()=>{
   if(!chatOferta?.id) return;
@@ -2168,6 +2738,7 @@ const [tipoCriacao, setTipoCriacao] = useState<
 
 const [descricaoObjeto, setDescricaoObjeto] = useState("");
 async function criarOfertaNova(novaOferta){
+  if(!exigirLoginParaAcao("Faca login para criar oferta.")) throw new Error("Login necessario");
   if(!usuarioId) throw new Error("usuarioId indisponivel");
 
   console.log("OFERTA RECEBIDA:", novaOferta)
@@ -2285,6 +2856,10 @@ async function enviarMensagemSistemaOferta(oferta:any, texto:string, extra:any =
     ofertaId,
     criadoEm:Date.now(),
     lidoPor:[usuarioId],
+    reported:false,
+    hiddenByModeration:false,
+    moderated:false,
+    deletedByAdmin:false,
     ...extra
   });
 }
@@ -2384,6 +2959,7 @@ async function efetivarDesistenciaOferta(oferta:any, motivoInformado?:string){
 // �x� FUN�!�"ES DE CHAT / OFERTA
 // ===============================
 function openChat(oferta:any){
+  if(!exigirLoginParaAcao("Faca login para abrir o chat.")) return;
   // Não limpa conversasOcultasMeta ao abrir — o filtro de mensagens antigas persiste
   setChatOferta(oferta);
   setChatVisivel(true);
@@ -2458,7 +3034,19 @@ async function excluirMensagem(mensagem:any, apenasParaMim:boolean = false){
 
 async function solicitarAceite(oferta:any){
   const ofertaId = String(oferta?.id || "");
+  if(!exigirLoginParaAcao("Faca login para solicitar carona/entrega.")) return;
   if(!ofertaId || !usuarioId) return;
+
+  const bloqueioAtual = await sincronizarBloqueioChatAtual(oferta, []);
+  if(bloqueioAtual.euBloqueei || bloqueioAtual.fuiBloqueado){
+    Alert.alert(
+      "Solicitação indisponível",
+      bloqueioAtual.fuiBloqueado
+        ? "Você foi bloqueado por este usuário."
+        : "Você bloqueou este usuário. Desbloqueie para continuar."
+    );
+    return;
+  }
 
   const solicitacoesAtuais = Array.isArray((oferta as any)?.solicitacoes)
     ? (oferta as any).solicitacoes.map((id:any)=>String(id))
@@ -2504,7 +3092,11 @@ async function solicitarAceite(oferta:any){
       autorFoto: perfilAtualMini.foto || null,
       ofertaId,
       criadoEm:Date.now(),
-      lidoPor:[usuarioId]
+      lidoPor:[usuarioId],
+      reported:false,
+      hiddenByModeration:false,
+      moderated:false,
+      deletedByAdmin:false
     });
 
     if(usuarioEhPro()){
@@ -2566,7 +3158,11 @@ async function aceitarSolicitacaoChat(mensagem:any){
       autorFoto: perfilAtualMini.foto || null,
       ofertaId,
       criadoEm:Date.now(),
-      lidoPor:[usuarioId]
+      lidoPor:[usuarioId],
+      reported:false,
+      hiddenByModeration:false,
+      moderated:false,
+      deletedByAdmin:false
     });
   }catch(error){
     console.log("Erro ao aceitar solicitação no chat:", error);
@@ -2609,10 +3205,151 @@ async function recusarSolicitacaoChat(mensagem:any){
       autorFoto: perfilAtualMini.foto || null,
       ofertaId,
       criadoEm:Date.now(),
-      lidoPor:[usuarioId]
+      lidoPor:[usuarioId],
+      reported:false,
+      hiddenByModeration:false,
+      moderated:false,
+      deletedByAdmin:false
     });
   }catch(error){
     console.log("Erro ao recusar solicitação no chat:", error);
+  }
+}
+
+async function bloquearUsuarioChat(alvoId:any){
+  const alvo = String(alvoId || "").trim();
+  const eu = String(usuarioId || "").trim();
+  if(!alvo || !eu || alvo === eu) return;
+
+  const proximo = {
+    ...usuariosBloqueados,
+    [alvo]: Date.now()
+  };
+
+  setUsuariosBloqueados(proximo);
+  setChatBloqueioManual((prev)=> ({ ...prev, outroId: alvo, euBloqueei: true }));
+
+  try{
+    const docId = `${eu}__${alvo}`;
+    await setDoc(doc(db, "blockedUsers", docId), {
+      blockerId: eu,
+      blockedId: alvo,
+      createdAt: serverTimestamp()
+    }, { merge: true });
+  }catch(error){
+    console.log("Erro ao bloquear usuário no chat:", error);
+  }
+}
+
+async function desbloquearUsuarioChat(alvoId:any){
+  const alvo = String(alvoId || "").trim();
+  const eu = String(usuarioId || "").trim();
+  if(!alvo || !eu) return;
+
+  const proximo = { ...usuariosBloqueados };
+  delete proximo[alvo];
+
+  setUsuariosBloqueados(proximo);
+  setChatBloqueioManual((prev)=> ({ ...prev, outroId: alvo, euBloqueei: false }));
+
+  try{
+    const docId = `${eu}__${alvo}`;
+    await deleteDoc(doc(db, "blockedUsers", docId));
+  }catch(error){
+    console.log("Erro ao desbloquear usuário no chat:", error);
+  }
+}
+
+function normalizarMotivoReport(valor:any): "spam" | "nudez" | "assedio" | "violencia" | "golpe" | "linguagem_ofensiva" | "outro" {
+  const txt = String(valor || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "_");
+
+  if(txt === "spam") return "spam";
+  if(txt === "nudez") return "nudez";
+  if(txt === "assedio") return "assedio";
+  if(txt === "violencia") return "violencia";
+  if(txt === "golpe") return "golpe";
+  if(txt === "linguagem_ofensiva") return "linguagem_ofensiva";
+  return "outro";
+}
+
+function tipoReportPorMensagem(mensagem:any): "usuario" | "mensagem" | "imagem" | "audio" {
+  const tipoMsg = String(mensagem?.tipo || "").trim().toLowerCase();
+  if(tipoMsg === "imagem") return "imagem";
+  if(tipoMsg === "audio") return "audio";
+  if(mensagem?.id) return "mensagem";
+  return "usuario";
+}
+
+async function denunciarNoChat(payload: { motivo: string; descricao?: string; message?: any; reportedUserId?: string }){
+  const motivo = String(payload?.motivo || "").trim();
+  if(!motivo || !chatOferta?.id || !usuarioId) return;
+
+  const mensagem = payload?.message || null;
+  const reportedUserId = String(payload?.reportedUserId || mensagem?.autor || chatBloqueioManual.outroId || "").trim();
+  const tipoReport = tipoReportPorMensagem(mensagem);
+  const motivoNormalizado = normalizarMotivoReport(motivo);
+
+  try{
+    await addDoc(collection(db, "reports"), {
+      tipo: tipoReport,
+      motivo: motivoNormalizado,
+      descricao: String(payload?.descricao || "").trim() || null,
+      reporterId: String(usuarioId),
+      targetUserId: reportedUserId || null,
+      messageId: String(mensagem?.id || "") || null,
+      chatId: String(chatOferta?.id || ""),
+      createdAt: serverTimestamp(),
+      status: "pendente"
+    });
+
+    if(mensagem?.id){
+      await updateDoc(doc(db, "ofertas", String(chatOferta?.id), "mensagens", String(mensagem.id)), {
+        reported: true,
+        moderated: true,
+        reportedAt: Date.now(),
+        reportedBy: String(usuarioId)
+      });
+    }
+  }catch(error){
+    console.log("Erro ao denunciar conteúdo do chat:", error);
+    throw error;
+  }
+}
+
+async function moderarMensagemChat(mensagem:any, acao: "ocultar" | "restaurar" | "excluir"){
+  const ofertaId = String(chatOferta?.id || mensagem?.ofertaId || "").trim();
+  const mensagemId = String(mensagem?.id || "").trim();
+  if(!ofertaId || !mensagemId) return;
+
+  if(String(chatOferta?.criadorId || "") !== String(usuarioId || "")){
+    Alert.alert("Permissão negada", "Apenas o criador da oferta pode moderar mensagens desta conversa.");
+    return;
+  }
+
+  const patch = acao === "ocultar"
+    ? { hiddenByModeration: true, moderated: true, moderationBy: String(usuarioId), moderationAt: Date.now() }
+    : acao === "restaurar"
+      ? { hiddenByModeration: false, moderated: true, moderationBy: String(usuarioId), moderationAt: Date.now() }
+      : {
+          deletedByAdmin: true,
+          moderated: true,
+          hiddenByModeration: false,
+          texto: "mensagem removida pela moderação",
+          tipo: "apagada",
+          mediaUrl: null,
+          moderationBy: String(usuarioId),
+          moderationAt: Date.now()
+        };
+
+  try{
+    await updateDoc(doc(db, "ofertas", ofertaId, "mensagens", mensagemId), patch as any);
+  }catch(error){
+    console.log("Erro ao moderar mensagem:", error);
   }
 }
 
@@ -2636,6 +3373,7 @@ function excluirConversa(_oferta:any){
 }
 
 function reservarVaga(oferta:any, quantidade:number, embarcaIdx:number, embarcaLabel:string, desembarcaIdx:number, desembarcaLabel:string){
+  if(!exigirLoginParaAcao("Faca login para reservar vaga.")) return;
   const reservas = [
     ...((oferta as any).reservas || []),
     {
@@ -2793,6 +3531,7 @@ function excluirOferta(oferta:any){
 }
 
 function openProfile(usuarioPerfilId:any, _ofertaParaAceite?:any){
+  if(!exigirLoginParaAcao("Faca login para acessar perfil.")) return;
   const idPerfil = String(usuarioPerfilId || "").trim();
 
   if(usuarioEhFree() && idPerfil && idPerfil !== String(usuarioId || "")){
@@ -3170,19 +3909,10 @@ function podeOuvirNivel(nivel:number){
 
 function podeCriarOfertaTipo(tipo:any){
   const tipoNormalizado = String(tipo || "").trim();
+  if(!tipoNormalizado) return false;
 
-  if(usuarioEhPremiumAtual()) return true;
-
-  // FREE não cria oferta pública
-  if(
-    tipoNormalizado === "carona_oferecida" ||
-    tipoNormalizado === "entrega" ||
-    tipoNormalizado === "carona_solicitada"
-  ){
-    return false;
-  }
-
-  return false;
+  // Publicacao de ofertas monetizaveis fica restrita ao Premium.
+  return usuarioEhPremiumAtual();
 }
 
 function podeSolicitarAcaoEmOferta(oferta:any){
@@ -3201,6 +3931,9 @@ function podeSolicitarAcaoEmOferta(oferta:any){
 
 function podeVerDetalhesCompletosOferta(oferta:any){
   if(usuarioEhPremiumAtual()) return true;
+
+  // FREE pode ver detalhes completos de carona ofertada (cliente/passageiro).
+  if(String(oferta?.tipo || "") === "carona_oferecida") return true;
 
   const criadorId = String(oferta?.criadorId || "").trim();
   if(criadorId && criadorId === String(usuarioId || "").trim()) return true;
@@ -3230,6 +3963,19 @@ function dadosOfertaParaUsuario(oferta:any){
     horarioSaida: null
   };
 }
+
+const ofertasVisiveisUsuario = useMemo(() => {
+  const lista = Array.isArray(ofertas) ? ofertas : [];
+
+  if(!usuarioEhPremiumAtual()){
+    // FREE/PRO visualizam apenas caronas ofertadas para contratar.
+    return lista
+      .filter((oferta:any)=>String(oferta?.tipo || "") === "carona_oferecida")
+      .map((oferta:any)=>(podeVerDetalhesCompletosOferta(oferta) ? oferta : dadosOfertaParaUsuario(oferta)));
+  }
+
+  return lista.map((oferta:any)=>(podeVerDetalhesCompletosOferta(oferta) ? oferta : dadosOfertaParaUsuario(oferta)));
+}, [ofertas, planoAtual, usuarioId]);
 
 function abrirTelaProSeNecessario(){
   setTelaProVisivel(true);
@@ -3273,11 +4019,25 @@ useEffect(()=>{
     const salvoPerfil = await AsyncStorage.getItem(`perfil_${usuarioId}`);
       let perfil = salvoPerfil ? JSON.parse(salvoPerfil) : {};
 
+      if(usuarioAutenticado){
+        perfil = {
+          ...perfil,
+          nome: String(perfil?.nome || auth.currentUser?.displayName || "").trim(),
+          foto: String(perfil?.foto || auth.currentUser?.photoURL || "").trim(),
+        };
+      }
+
       if(!String(perfil?.nome || "").trim() || !String(perfil?.foto || "").trim()){
         try{
-          const snapPerfil = await getDoc(doc(db, "perfisUsuarios", String(usuarioId)));
-          if(snapPerfil.exists()){
-            const remoto:any = snapPerfil.data() || {};
+          const [snapUsuario, snapPerfilLegado] = await Promise.all([
+            getDoc(doc(db, "usuarios", String(usuarioId))),
+            getDoc(doc(db, "perfisUsuarios", String(usuarioId))),
+          ]);
+          const remoto:any = snapUsuario.exists()
+            ? (snapUsuario.data() || {})
+            : (snapPerfilLegado.exists() ? (snapPerfilLegado.data() || {}) : null);
+
+          if(remoto){
             perfil = {
               ...perfil,
               nome: String(perfil?.nome || remoto?.nome || "").trim(),
@@ -3319,10 +4079,17 @@ useEffect(()=>{
  }
 
  async function verificarTermo(){
-   const ok = await AsyncStorage.getItem("aceitou_termo");
-   if(ok==="sim"){
+   const [ok, versao] = await Promise.all([
+     AsyncStorage.getItem("aceitou_termo"),
+     AsyncStorage.getItem("aceitou_termo_versao")
+   ]);
+
+   if(ok === "sim" && versao === TERMO_VERSAO_ATUAL){
      setAceitouTermo(true);
+     return;
    }
+
+   setAceitouTermo(false);
  }
 
  carregarIdioma();
@@ -3333,29 +4100,123 @@ useEffect(()=>{
 useEffect(()=>{
   let ativo = true;
 
-  async function carregarUsuarioIdUnico(){
+  async function carregarUsuarioAnonimo(){
     try{
       const salvo = await AsyncStorage.getItem("usuario_id_dispositivo");
+      if(!ativo) return;
+
       if(salvo){
-        if(ativo) setUsuarioId(salvo);
+        setUsuarioAnonimoId(String(salvo));
         return;
       }
 
       const novoId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       await AsyncStorage.setItem("usuario_id_dispositivo", novoId);
-      if(ativo) setUsuarioId(novoId);
+      if(ativo) setUsuarioAnonimoId(novoId);
     }catch(error){
       console.log("Erro ao carregar usuarioId do dispositivo:", error);
-      if(ativo) setUsuarioId(`user_${Date.now()}`);
+      if(ativo) setUsuarioAnonimoId(`user_${Date.now()}`);
     }
   }
 
-  carregarUsuarioIdUnico();
+  carregarUsuarioAnonimo();
 
   return ()=>{
     ativo = false;
   };
 },[]);
+
+useEffect(()=>{
+  let ativo = true;
+
+  const unsubscribe = onAuthStateChanged(auth, (usuario)=>{
+    if(!ativo) return;
+    setAuthUid(String(usuario?.uid || "").trim());
+    setAuthCarregando(false);
+  });
+
+  return ()=>{
+    ativo = false;
+    unsubscribe();
+  };
+}, []);
+
+useEffect(()=>{
+  const uid = String(authUid || "").trim();
+  if(uid){
+    setUsuarioId(uid);
+    return;
+  }
+
+  setUsuarioId(String(usuarioAnonimoId || "").trim());
+}, [authUid, usuarioAnonimoId]);
+
+useEffect(()=>{
+  const uid = String(authUid || "").trim();
+  if(!uid) return;
+
+  let ativo = true;
+
+  async function sincronizarPerfilAuth(){
+    try{
+      const [perfilUidRaw, perfilAnonRaw] = await Promise.all([
+        AsyncStorage.getItem(`perfil_${uid}`),
+        usuarioAnonimoId ? AsyncStorage.getItem(`perfil_${usuarioAnonimoId}`) : Promise.resolve(null),
+      ]);
+
+      const perfilUid = perfilUidRaw ? JSON.parse(perfilUidRaw) : {};
+      const perfilAnon = perfilAnonRaw ? JSON.parse(perfilAnonRaw) : {};
+
+      const perfilMesclado = {
+        ...perfilAnon,
+        ...perfilUid,
+        nome: String(perfilUid?.nome || perfilAnon?.nome || auth.currentUser?.displayName || "").trim(),
+        foto: String(perfilUid?.foto || perfilAnon?.foto || auth.currentUser?.photoURL || "").trim(),
+        cidade: String(perfilUid?.cidade || perfilAnon?.cidade || "").trim(),
+        telefone: String(perfilUid?.telefone || perfilAnon?.telefone || "").trim(),
+        veiculos: Array.isArray(perfilUid?.veiculos)
+          ? perfilUid.veiculos
+          : (Array.isArray(perfilAnon?.veiculos) ? perfilAnon.veiculos : []),
+      };
+
+      await AsyncStorage.setItem(`perfil_${uid}`, JSON.stringify(perfilMesclado));
+
+      if(ativo){
+        setPerfilAtualMini({
+          nome: String(perfilMesclado?.nome || "").trim(),
+          foto: String(perfilMesclado?.foto || "").trim(),
+        });
+      }
+
+      const payloadUsuario = {
+        uid,
+        email: String(auth.currentUser?.email || "").trim() || null,
+        nome: String(perfilMesclado?.nome || "").trim(),
+        foto: String(perfilMesclado?.foto || "").trim(),
+        cidade: String(perfilMesclado?.cidade || "").trim(),
+        telefone: String(perfilMesclado?.telefone || "").trim(),
+        veiculos: Array.isArray(perfilMesclado?.veiculos) ? perfilMesclado.veiculos : [],
+        migradoDePerfilLocal: !!usuarioAnonimoId,
+        usuarioAnonimoIdOrigem: usuarioAnonimoId || null,
+        atualizadoEmCliente: Date.now(),
+        atualizadoEm: serverTimestamp(),
+      };
+
+      await Promise.all([
+        setDoc(doc(db, "usuarios", uid), payloadUsuario, { merge: true }),
+        setDoc(doc(db, "perfisUsuarios", uid), payloadUsuario, { merge: true }),
+      ]);
+    }catch(error){
+      console.log("Erro ao sincronizar perfil autenticado:", error);
+    }
+  }
+
+  sincronizarPerfilAuth();
+
+  return ()=>{
+    ativo = false;
+  };
+}, [authUid, usuarioAnonimoId]);
 useEffect(()=>{
 
 const show = Keyboard.addListener("keyboardDidShow",()=>{
@@ -3493,6 +4354,16 @@ useEffect(()=>{
   if(assinatura === null) return;
   if(landingInicialPorPlanoAplicadoRef.current) return;
 
+  if(!usuarioAutenticado){
+    landingInicialPorPlanoAplicadoRef.current = true;
+    setOfertaSelecionada(null);
+    setChatVisivel(false);
+    setRotaVisivel(false);
+    setAbaAtiva(null);
+    setMenuOfertasVisivel(false);
+    return;
+  }
+
   landingInicialPorPlanoAplicadoRef.current = true;
 
   setOfertaSelecionada(null);
@@ -3514,7 +4385,18 @@ useEffect(()=>{
 
   setAbaOfertas("procurar");
   setMenuOfertasVisivel(false);
-},[assinatura, planoAtual]);
+},[assinatura, planoAtual, usuarioAutenticado]);
+
+useEffect(()=>{
+  if(usuarioAutenticado) return;
+  const existeAbaRestrita = !!abaAtiva || menuOfertasVisivel || chatVisivel;
+  if(!existeAbaRestrita) return;
+
+  setAbaAtiva(null);
+  setMenuOfertasVisivel(false);
+  setChatVisivel(false);
+  abrirTelaLogin("Faca login para usar caronas, entregas, chat, reservas e perfil.");
+}, [usuarioAutenticado, abaAtiva, menuOfertasVisivel, chatVisivel]);
  // carregar config toque duplo
  useEffect(()=>{
   async function loadTouch(){
@@ -3531,12 +4413,13 @@ const [mostrarAds, setMostrarAds] = useState(true);
 
 // Rastreamento online (lastSeen em Firestore)
 useEffect(() => {
-  if (!usuarioId) return;
+  if (!usuarioAutenticado || !authUid) return;
 
   const atualizarPresenca = async () => {
     try {
-      const docRef = doc(db, "usuarios", usuarioId);
+      const docRef = doc(db, "usuarios", authUid);
       await setDoc(docRef, {
+        uid: authUid,
         lastSeen: Date.now(),
       }, { merge: true });
     } catch {
@@ -3552,7 +4435,7 @@ useEffect(() => {
   }, 30000);
 
   return () => clearInterval(intervalo);
-}, [usuarioId]);
+}, [usuarioAutenticado, authUid]);
 
 // só mostra anúncio parado
 function podeMostrarAd(vel:number){
@@ -3794,6 +4677,9 @@ const personalidade = {
 };
 
   const mapRef = useRef<MapView>(null);
+  const fallbackProviderTimerRef = useRef<any>(null);
+  const mapaBaseCarregadoRef = useRef(false);
+  const [forcarProviderPadrao, setForcarProviderPadrao] = useState(false);
   const ultimoPoiFalado = useRef("");
 
   const [origem, setOrigem] = useState<any>(null);
@@ -3825,6 +4711,14 @@ useEffect(()=>{
  return ()=>clearInterval(t);
 
 },[]);
+
+useEffect(() => {
+  return () => {
+    if (fallbackProviderTimerRef.current) {
+      clearTimeout(fallbackProviderTimerRef.current);
+    }
+  };
+}, []);
 
   
   const [destinoLat, setDestinoLat] = useState<number | null>(null);
@@ -4119,13 +5013,13 @@ const [inputEnderecoCasa, setInputEnderecoCasa] = useState("");
 
     if(!tipo) return;
 
-    const chave = tipo + Math.round(p.lat*1000);
+    const chave = `${tipo}:${Math.round(Number(p.lat) * 1000)}:${Math.round(Number(p.lon) * 1000)}`;
 
-        if(dist < 90){
+        if(dist < 180){
       const ultimoDisparo = Number(poisMemoria.current[chave] || 0);
       const agora = Date.now();
 
-      if((agora - ultimoDisparo) > 120000){
+      if((agora - ultimoDisparo) > 60000){
         falarPoi(tipo);
         poisMemoria.current[chave] = agora;
       }
@@ -4188,13 +5082,23 @@ useEffect(()=>{
 
   const onBackPress = () => {
 
+    if(rotaPronta){
+      sheetRef.current?.close?.();
+      setRotaPronta(false);
+      setAbaAtiva(null);
+      setMenuOfertasVisivel(true);
+      return true;
+    }
+
     if(menuAberto){
       setMenuAberto(false);
       return true;
     }
 
     if(navegando){
+      sheetRef.current?.close?.();
       setNavegando(false);
+      setRotaPronta(false);
       setRouteCoords([]);
       setAltRouteCoords([]);
       setDestinoTxt("");
@@ -4256,7 +5160,13 @@ useEffect(()=>{
 
   return ()=> subscription.remove();
 
-},[abaAtiva, chatVisivel, menuAberto, menuOfertasVisivel, ofertaSelecionada, navegando, rotaVisivel, routeCoords.length]);
+},[abaAtiva, chatVisivel, menuAberto, menuOfertasVisivel, ofertaSelecionada, navegando, rotaVisivel, routeCoords.length, rotaPronta]);
+
+useEffect(()=>{
+  if(!rotaPronta){
+    sheetRef.current?.close?.();
+  }
+}, [rotaPronta]);
 
 
   useEffect(()=>{
@@ -4408,6 +5318,12 @@ function obterAlvoStep(step:any){
   return null;
 }
 
+function indiceWaypointFinalDoStep(step:any){
+  if(!Array.isArray(step?.way_points) || step.way_points.length === 0) return null;
+  const idx = Number(step.way_points[step.way_points.length - 1]);
+  return Number.isFinite(idx) ? idx : null;
+}
+
 const distanciaStepAtualM = useMemo(() => {
   if (!navegando || !carroPos || !stepAtualVisual) return null;
 
@@ -4451,6 +5367,8 @@ useEffect(()=>{
  if(!navegando) return;
  if(!carroPos) return;
  if(!stepsRota || stepsRota.length===0) return;
+ const velocidadeLocalKmH = Math.max(0, Number(carroPos?.speed || 0) * 3.6);
+ if(velocidadeLocalKmH < 6) return;
 if(routeCoords.length > 0 && carroPos){
 
   // pega ponto mais próximo da rota
@@ -4600,7 +5518,7 @@ function podeBuscarPOI(lat:number,lng:number){
   const dy = lng - ultimaBuscaPOI.current.lng;
   const dist = Math.sqrt(dx*dx+dy*dy)*111000;
 
-  if(dist > 700){
+  if(dist > 250){
     ultimaBuscaPOI.current = {lat,lng};
     return true;
   }
@@ -4762,30 +5680,30 @@ if(!mapMovidoRef.current){
 
   const headingSuave = ultimoHeadingValidoRef.current;
 
-  let zoomCamera = 20.1;
-  let pitchCamera = 66;
-  let metrosFrente = 22;
+  let zoomCamera = 17.95;
+  let pitchCamera = 52;
+  let metrosFrente = 34;
   let duracaoCamera = 260;
-  let altitudeCamera = 180;
+  let altitudeCamera = 360;
 
   if(velocidadeAtual >= 20 && velocidadeAtual < 45){
-    zoomCamera = 19.8;
-    pitchCamera = 67;
-    metrosFrente = 30;
+    zoomCamera = 17.8;
+    pitchCamera = 54;
+    metrosFrente = 48;
     duracaoCamera = 280;
-    altitudeCamera = 220;
+    altitudeCamera = 430;
   }else if(velocidadeAtual >= 45 && velocidadeAtual < 75){
-    zoomCamera = 19.35;
-    pitchCamera = 68;
-    metrosFrente = 40;
+    zoomCamera = 17.55;
+    pitchCamera = 56;
+    metrosFrente = 62;
     duracaoCamera = 300;
-    altitudeCamera = 270;
+    altitudeCamera = 500;
   }else if(velocidadeAtual >= 75){
-    zoomCamera = 18.95;
-    pitchCamera = 69;
-    metrosFrente = 54;
+    zoomCamera = 17.25;
+    pitchCamera = 58;
+    metrosFrente = 76;
     duracaoCamera = 320;
-    altitudeCamera = 330;
+    altitudeCamera = 580;
   }
 
   const centro = deslocarCentroPelaDirecao(
@@ -4812,64 +5730,93 @@ if(!mapMovidoRef.current){
         }
 
         // ===== FORA DA ROTA =====
-        const distRota = distanciaAteRota(lat,lng);
+        const podeAvaliarErroRota =
+          velocidadeAtual >= 2 &&
+          stepsRota.length > 0 &&
+          Array.isArray(routeCoordsFull) && routeCoordsFull.length > 8;
 
-        let toleranciaForaRota = 28;
+        const distRota = podeAvaliarErroRota
+          ? distanciaAteRota(lat,lng)
+          : 0;
+
+               let toleranciaForaRota = 95;
         if(velocidadeAtual >= 20 && velocidadeAtual < 50){
-          toleranciaForaRota = 38;
+          toleranciaForaRota = 120;
         }else if(velocidadeAtual >= 50 && velocidadeAtual < 80){
-          toleranciaForaRota = 50;
+          toleranciaForaRota = 150;
         }else if(velocidadeAtual >= 80){
-          toleranciaForaRota = 62;
+          toleranciaForaRota = 190;
         }
 
         const realmenteForaRota = distRota > toleranciaForaRota;
         const agoraForaRota = Date.now();
         const emSilencioForaRota = agoraForaRota < silencioAposRecalculoRef.current;
+        const amostrasMinimasForaRota = 1;
 
-        if(realmenteForaRota){
-          foraRotaCountRef.current += 1;
-          if(foraRotaCountRef.current >= 1){
-            falarErroRota();
-          }
-
-          // Se continuar fora da rota, reforça o aviso periodicamente.
-          if(!emSilencioForaRota && agoraForaRota - ultimoXingamentoForaRotaRef.current > 8000){
-            ultimoXingamentoForaRotaRef.current = agoraForaRota;
-            falarErroRota();
-          }
-        }else{
+        if(!podeAvaliarErroRota){
           foraRotaCountRef.current = 0;
           ultimoXingamentoForaRotaRef.current = 0;
-        }
+          xingamentosNoEventoForaRotaRef.current = 0;
+          setForaRota(false);
+        }else{
+          if(realmenteForaRota){
+            const primeiraDeteccaoEvento = foraRotaCountRef.current === 0;
+            foraRotaCountRef.current += 1;
+            const repeticoesNoEvento = xingamentosNoEventoForaRotaRef.current;
+            const intervaloXingamentoMs =
+              repeticoesNoEvento === 0
+                ? 1200
+                : repeticoesNoEvento < 2
+                  ? 1800
+                  : repeticoesNoEvento < 4
+                    ? 3500
+                    : 6000;
 
-        setForaRota(realmenteForaRota && foraRotaCountRef.current >= 1);
-
-        // drift de GPS parado
-        if(velocidadeAtual < 6){
-          return;
-        }
-
-        if(realmenteForaRota && foraRotaCountRef.current >= 1){
-          if(
-            agoraForaRota - ultimoRecalculo.current > 1800 &&
-            !recalculandoRotaRef.current
-          ){
-            recalculandoRotaRef.current = true;
-            ultimoRecalculo.current = agoraForaRota;
-            silencioAposRecalculoRef.current = agoraForaRota + 900;
+            if(
+              !emSilencioForaRota &&
+              (
+                primeiraDeteccaoEvento ||
+                agoraForaRota - ultimoXingamentoForaRotaRef.current > intervaloXingamentoMs
+              )
+            ){
+              ultimoXingamentoForaRotaRef.current = agoraForaRota;
+              falarErroRota();
+              xingamentosNoEventoForaRotaRef.current += 1;
+            }
+          }else{
             foraRotaCountRef.current = 0;
+            ultimoXingamentoForaRotaRef.current = 0;
+            xingamentosNoEventoForaRotaRef.current = 0;
+          }
 
-            falarErroRota();
+          const foraRotaConfirmada = foraRotaCountRef.current >= amostrasMinimasForaRota;
+          setForaRota(realmenteForaRota && foraRotaConfirmada);
 
-            setTimeout(()=>{
-              Promise.resolve(buscarDestino(true))
-                .finally(()=>{
-                  recalculandoRotaRef.current = false;
-                });
-            }, 350);
+          if(realmenteForaRota && foraRotaConfirmada && distRota > (toleranciaForaRota + 12)){
+            if(
+              agoraForaRota - ultimoRecalculo.current > 1400 &&
+              !recalculandoRotaRef.current
+            ){
+              if(xingamentosNoEventoForaRotaRef.current === 0){
+                ultimoXingamentoForaRotaRef.current = agoraForaRota;
+                falarErroRota();
+                xingamentosNoEventoForaRotaRef.current += 1;
+              }
 
-            return;
+              recalculandoRotaRef.current = true;
+              ultimoRecalculo.current = agoraForaRota;
+              silencioAposRecalculoRef.current = agoraForaRota + 250;
+              foraRotaCountRef.current = 0;
+
+              setTimeout(()=>{
+                Promise.resolve(buscarDestino(true))
+                  .finally(()=>{
+                    recalculandoRotaRef.current = false;
+                  });
+              }, 120);
+
+              return;
+            }
           }
         }
 
@@ -4887,6 +5834,48 @@ if(!mapMovidoRef.current){
       const dLat = lat - Number(alvo.latitude);
       const dLng = lng - Number(alvo.longitude);
   let dist = Math.sqrt(dLat*dLat + dLng*dLng) * 111000;
+
+  // sincroniza o step com o progresso real na polilinha para não travar em via antiga.
+  if(
+    Array.isArray(routeCoordsFull) &&
+    routeCoordsFull.length > 20 &&
+    stepIndexAtual < stepsRota.length - 1 &&
+    velocidadeAtual >= 8
+  ){
+    const idxRotaAtual = calcularIndiceMaisProximoNaRota(routeCoordsFull, lat, lng);
+    const idxStepAtual = indiceWaypointFinalDoStep(stepAtual);
+
+    if(
+      Number.isFinite(idxRotaAtual) &&
+      Number.isFinite(Number(idxStepAtual)) &&
+      idxRotaAtual > Number(idxStepAtual) + 14 &&
+      dist > 42
+    ){
+      let novoStep = stepIndexAtual;
+
+      for(let idx = stepIndexAtual + 1; idx < stepsRota.length; idx++){
+        const candIdx = indiceWaypointFinalDoStep(stepsRota[idx]);
+        if(!Number.isFinite(Number(candIdx))) continue;
+
+        if(Number(candIdx) >= idxRotaAtual - 6){
+          novoStep = idx;
+          break;
+        }
+      }
+
+      if(novoStep > stepIndexAtual){
+        stepAtualRef.current = novoStep;
+        ultimoStepPreAvisadoRef.current = -1;
+        ultimoStepCurvaFaladoRef.current = -1;
+        stepMonitoradoRef.current = -1;
+        ultimaDistanciaStepRef.current = null;
+        afastandoStepCountRef.current = 0;
+        stepMuitoLongeCountRef.current = 0;
+        falarErroRota();
+        return;
+      }
+    }
+  }
 
   if(stepMonitoradoRef.current !== stepIndexAtual){
     stepMonitoradoRef.current = stepIndexAtual;
@@ -4924,6 +5913,7 @@ if(!mapMovidoRef.current){
       ultimaDistanciaStepRef.current = null;
       afastandoStepCountRef.current = 0;
       stepMuitoLongeCountRef.current = 0;
+      falarErroRota();
       return;
     }
   }
@@ -5177,20 +6167,37 @@ async function buscarSugestoesDestino(texto:string){
   }
 
   try{
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(textoLimpo)}&countrycodes=br&limit=8&addressdetails=1`;
+    const geocodeQuery = textoLimpo;
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(geocodeQuery)}&limit=8&addressdetails=1`;
+    console.log("[GEOCODE_QUERY]", geocodeQuery);
+    console.log("[GEOCODE_URL]", url);
 
     const response = await fetch(url, {
       headers:{ "User-Agent":"gps-clean-app" }
     });
 
     const json = await response.json();
+    const primeiroResultado = Array.isArray(json) ? json[0] : null;
+    console.log("[GEOCODE_RESULT]", primeiroResultado);
 
     const consulta = normalizarTextoBusca(textoLimpo);
     const tokens = consulta.split(/\s+/).filter(Boolean);
 
-    const lista = (Array.isArray(json) ? json : [])
+    let lista = (Array.isArray(json) ? json : [])
       .map((item:any)=>{
         const address = item?.address || {};
+
+        const rua = String(
+          address?.road ||
+          address?.pedestrian ||
+          address?.footway ||
+          address?.path ||
+          address?.cycleway ||
+          address?.street ||
+          ""
+        ).trim();
+        const numero = String(address?.house_number || "").trim();
+        const enderecoRua = numero && rua ? `${rua}, ${numero}` : rua;
 
         const cidade = String(
           address?.city ||
@@ -5203,12 +6210,18 @@ async function buscarSugestoesDestino(texto:string){
 
         const estado = String(address?.state || "").trim();
 
-        const description =
-          cidade && estado
-            ? `${cidade}, ${estado}`
-            : cidade
-              ? cidade
-              : String(item?.display_name || "").split(",").slice(0,2).join(", ").trim();
+        let description: string;
+        if(enderecoRua && cidade){
+          description = `${enderecoRua}, ${cidade}${estado ? `, ${estado}` : ""}`;
+        } else if(enderecoRua){
+          description = `${enderecoRua}${cidade ? `, ${cidade}` : ""}${estado ? `, ${estado}` : ""}`;
+        } else if(cidade && estado){
+          description = `${cidade}, ${estado}`;
+        } else if(cidade){
+          description = cidade;
+        } else {
+          description = String(item?.display_name || "").split(",").slice(0,3).join(", ").trim();
+        }
 
         const enderecoCompleto = String(item?.display_name || "").trim();
         const normalizado = normalizarTextoBusca(description || enderecoCompleto);
@@ -5219,8 +6232,11 @@ async function buscarSugestoesDestino(texto:string){
         if(normalizado.startsWith(consulta)) score += 100;
         if(normalizado.includes(consulta)) score += 50;
         if(tokens.length > 0 && tokens.every((t)=>normalizado.includes(t))) score += 30;
+        // Preferir resultados com rua específica (highway, building)
+        if(enderecoRua) score += 40;
+        if(classe === "highway" || tipo === "residential" || tipo === "primary" || tipo === "secondary" || tipo === "tertiary" || tipo === "unclassified" || tipo === "service") score += 35;
         if(classe === "place") score += 20;
-        if(["city","town","village","municipality","administrative","state","county"].includes(tipo)) score += 25;
+        if(["city","town","village","municipality","administrative","state","county"].includes(tipo)) score += 10;
 
         return {
           description,
@@ -5239,6 +6255,65 @@ async function buscarSugestoesDestino(texto:string){
         lat: item.lat,
         lng: item.lng
       }));
+
+    if(lista.length === 0){
+      const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(geocodeQuery)}&limit=8`;
+      console.log("[GEOCODE_URL]", photonUrl);
+      const photonRes = await fetch(photonUrl, { headers:{ "Accept":"application/json" } });
+      const photonJson = await photonRes.json();
+
+      lista = (Array.isArray(photonJson?.features) ? photonJson.features : [])
+        .map((feature:any)=>{
+          const props = feature?.properties || {};
+          const rua = String(props?.street || props?.name || "").trim();
+          const numero = String(props?.housenumber || "").trim();
+          const enderecoRua = numero && rua ? `${rua}, ${numero}` : rua;
+          const cidade = String(props?.city || props?.town || props?.village || "").trim();
+          const estado = String(props?.state || props?.county || "").trim();
+          const pais = String(props?.country || "").trim();
+          const nome = String(props?.name || "").trim();
+
+          // Se é uma rua/endereço, montar com rua primeiro
+          let description: string;
+          if(enderecoRua && enderecoRua !== nome && cidade){
+            description = [enderecoRua, cidade, estado, pais].filter(Boolean).join(", ");
+          } else {
+            description = [nome || cidade, estado, pais].filter(Boolean).join(", ");
+          }
+          const lng = Number(feature?.geometry?.coordinates?.[0]);
+          const lat = Number(feature?.geometry?.coordinates?.[1]);
+
+          return {
+            description: description || `${cidade}${estado ? `, ${estado}` : ""}`,
+            enderecoCompleto: description || `${cidade}${estado ? `, ${estado}` : ""}`,
+            lat,
+            lng,
+          };
+        })
+        .filter((item:any)=>item.description && Number.isFinite(item.lat) && Number.isFinite(item.lng))
+        .slice(0, 6);
+    }
+
+    if(lista.length === 0){
+      const orsUrl = `https://api.openrouteservice.org/geocode/autocomplete?api_key=eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImEyODU2NWExYzJiNTQ4MDVhMWMyYjQ0YjkzMTYxMDhlIiwiaCI6Im11cm11cjY0In0=&text=${encodeURIComponent(geocodeQuery)}&size=5`;
+      console.log("[GEOCODE_URL]", orsUrl);
+      const orsRes = await fetch(orsUrl, { headers:{ "Accept":"application/json" } });
+      const orsJson = await orsRes.json();
+
+      lista = (Array.isArray(orsJson?.features) ? orsJson.features : [])
+        .map((f:any)=>{
+          const description = String(f?.properties?.label || "").trim();
+          const lng = Number(f?.geometry?.coordinates?.[0]);
+          const lat = Number(f?.geometry?.coordinates?.[1]);
+          return {
+            description,
+            enderecoCompleto: description,
+            lat,
+            lng
+          };
+        })
+        .filter((item:any)=>item.description && Number.isFinite(item.lat) && Number.isFinite(item.lng));
+    }
 
     setSugestoes(lista);
     setSugestoesDestino(lista);
@@ -5370,12 +6445,12 @@ const buscarRotaORS = async (origem:any, destino:any) => {
     if(!res.ok){
       console.log("ORS HTTP STATUS:", res.status);
       console.log("ORS BODY:", String(texto || "").slice(0, 300));
-      return null;
+      throw new Error(`ORS HTTP ${res.status}`);
     }
 
     if(!texto || String(texto).trim().startsWith("<")){
       console.log("ORS resposta inválida:", String(texto || "").slice(0, 300));
-      return null;
+      throw new Error("ORS resposta inválida");
     }
 
     let data:any = null;
@@ -5384,7 +6459,7 @@ const buscarRotaORS = async (origem:any, destino:any) => {
       data = JSON.parse(texto);
     }catch(e){
       console.log("Erro parse ORS:", e);
-      return null;
+      throw new Error("Falha parse ORS");
     }
 
     let coords:any[] = [];
@@ -5441,7 +6516,7 @@ const buscarRotaORS = async (origem:any, destino:any) => {
 
     if(!coords || coords.length < 2){
       console.log("ROTA INVÁLIDA ORS");
-      return null;
+      throw new Error("Rota ORS inválida");
     }
 
     const coordsComOrigem = carroPos
@@ -5469,6 +6544,8 @@ const buscarRotaORS = async (origem:any, destino:any) => {
     setAltRouteCoords([]);
     setStepsRota(Array.isArray(steps) ? steps : []);
     stepAtualRef.current = 0;
+    ultimoStepPreAvisadoRef.current = -1;
+    ultimoStepCurvaFaladoRef.current = -1;
 
     setTempo(Math.round(duracaoSegundos / 60));
     setDistancia(Math.round((distanciaMetros / 1000) * 10) / 10);
@@ -5488,7 +6565,55 @@ const buscarRotaORS = async (origem:any, destino:any) => {
     };
   }catch(e){
     console.log("ERRO ROTA ORS", e);
-    return null;
+
+    const origemLat = Number(origem?.lat);
+    const origemLng = Number(origem?.lng);
+    const destLat = Number(destino?.lat);
+    const destLng = Number(destino?.lng);
+
+    if(!Number.isFinite(origemLat) || !Number.isFinite(origemLng) || !Number.isFinite(destLat) || !Number.isFinite(destLng)){
+      return null;
+    }
+
+    try{
+      const rotaFallback = await buscarRotaComFallback(origemLat, origemLng, destLat, destLng);
+      if(!rotaFallback || !Array.isArray(rotaFallback.coords) || rotaFallback.coords.length < 2){
+        return null;
+      }
+
+      const previewFallback = recortarPreviewFinalDaRota(
+        rotaFallback.coords,
+        destLat,
+        destLng,
+        28
+      );
+
+      setRouteCoordsFull(rotaFallback.coords);
+      setAltRouteCoordsFull(Array.isArray(rotaFallback.altCoords) ? rotaFallback.altCoords : []);
+      setRouteCoords(previewFallback);
+      setRotaCoords(previewFallback);
+      setRotaSelecionada(rotaFallback.coords);
+      setAltRouteCoords(Array.isArray(rotaFallback.altCoords) ? rotaFallback.altCoords : []);
+      setStepsRota(Array.isArray(rotaFallback.steps) ? rotaFallback.steps : []);
+      stepAtualRef.current = 0;
+      ultimoStepPreAvisadoRef.current = -1;
+      ultimoStepCurvaFaladoRef.current = -1;
+
+      setTempo(Math.round(Number(rotaFallback.duration || 0) / 60));
+      setDistancia(Math.round((Number(rotaFallback.distance || 0) / 1000) * 10) / 10);
+      setDestinoPreview({ lat: destLat, lng: destLng });
+
+      return {
+        coords: rotaFallback.coords,
+        preview: previewFallback,
+        distanciaMetros: Number(rotaFallback.distance || 0),
+        duracaoSegundos: Number(rotaFallback.duration || 0),
+        steps: Array.isArray(rotaFallback.steps) ? rotaFallback.steps : []
+      };
+    }catch(fallbackError){
+      console.log("ERRO ROTA FALLBACK", fallbackError);
+      return null;
+    }
   }
 };
 function restaurarRotaCompletaParaNavegacao(
@@ -5515,6 +6640,7 @@ function restaurarRotaCompletaParaNavegacao(
   }
 
   setRouteCoords(coordsFull);
+  setRouteCoordsFull(coordsFull);
 
   if(rotaAlt){
     const altcoordsFull = rotaAlt.geometry.coordinates.map((c:any)=>({
@@ -5535,7 +6661,9 @@ function restaurarRotaCompletaParaNavegacao(
     }
 
     setAltRouteCoords(altcoordsFull);
+    setAltRouteCoordsFull(altcoordsFull);
   }else{
+    setAltRouteCoordsFull([]);
     setAltRouteCoords([]);
   }
 }
@@ -5573,6 +6701,8 @@ async function prepararDestinoParaViagem(
   setRotaSelecionada([]);
   setStepsRota([]);
   stepAtualRef.current = 0;
+  ultimoStepPreAvisadoRef.current = -1;
+  ultimoStepCurvaFaladoRef.current = -1;
   ultimaInstrucaoRef.current = "";
   resetarControleChegadaDestino();
 
@@ -5646,6 +6776,8 @@ async function prepararDestinoParaViagem(
       setAltRouteCoords(Array.isArray(rotaFallback.altCoords) ? rotaFallback.altCoords : []);
       setStepsRota(Array.isArray(rotaFallback.steps) ? rotaFallback.steps : []);
       stepAtualRef.current = 0;
+      ultimoStepPreAvisadoRef.current = -1;
+      ultimoStepCurvaFaladoRef.current = -1;
       setTempo(Math.round(Number(rotaFallback.duration || 0) / 60));
       setDistancia(Math.round((Number(rotaFallback.distance || 0) / 1000) * 10) / 10);
       setDestinoPreview({ lat: Number(destLat), lng: Number(destLng) });
@@ -5738,10 +6870,15 @@ if (status !== "granted") {
       if(!Number.isFinite(destLat) || !Number.isFinite(destLng)){
 
         try {
-          // tenta Nominatim primeiro (melhor para endereços brasileiros)
-          const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(destinoTextoAtual)}&countrycodes=br&limit=1`;
+          // tenta Nominatim primeiro para busca mundial
+          const geocodeQuery = destinoTextoAtual;
+          const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(geocodeQuery)}&limit=1`;
+          console.log("[GEOCODE_QUERY]", geocodeQuery);
+          console.log("[GEOCODE_URL]", nomUrl);
           const nomRes = await fetch(nomUrl, { headers:{ "User-Agent":"gps-clean-app" } });
           const nomJson = await nomRes.json();
+          const primeiroResultado = Array.isArray(nomJson) ? nomJson[0] : null;
+          console.log("[GEOCODE_RESULT]", primeiroResultado);
 
           if(nomJson && nomJson.length > 0){
             destLat = parseFloat(nomJson[0].lat);
@@ -5782,20 +6919,40 @@ setRotaCarregando(true);
 
       const continueStraight = forcar ? "&continue_straight=true" : "";
       const headingAtual = Number(loc?.coords?.heading);
-      const bearings = forcar && Number.isFinite(headingAtual) && headingAtual >= 0
-        ? `&bearings=${Math.round(headingAtual)},45;`
-        : "";
-  const url = `https://router.project-osrm.org/route/v1/driving/${origemLng},${origemLat};${destLng},${destLat}?alternatives=3&overview=full&geometries=geojson&steps=true&annotations=false${continueStraight}${bearings}`;
+      const montarUrlOsrm = (usarPreferenciasRecalculo:boolean) => {
+        const continueStraightParam = forcar && usarPreferenciasRecalculo
+          ? continueStraight
+          : "";
+        const bearings = forcar && usarPreferenciasRecalculo && Number.isFinite(headingAtual) && headingAtual >= 0
+          ? `&bearings=${Math.round(headingAtual)},45;`
+          : "";
 
-      console.log("�x�️ DESTINO TEXTO:", destinoTextoAtual);
-      console.log("�x�️ DESTINO COORDS:", destLat, destLng);
-      console.log("�x�️ ORIGEM COORDS:", origemLat, origemLng);
-      console.log("�x�️ URL OSRM:", url);
-      const res = await fetch(url);
-      const json = await res.json();
-      console.log("�xa� ROTA SENDO CHAMADA");
-      console.log("ROTAS RECEBIDAS:", json.routes?.length);
-      if(!json?.routes?.length) console.log("�xa� OSRM ERRO RESP:", JSON.stringify(json).slice(0,200));
+        return `https://router.project-osrm.org/route/v1/driving/${origemLng},${origemLat};${destLng},${destLat}?alternatives=3&overview=full&geometries=geojson&steps=true&annotations=false${continueStraightParam}${bearings}`;
+      };
+
+      const buscarRotaOsrm = async (usarPreferenciasRecalculo:boolean) => {
+        const url = montarUrlOsrm(usarPreferenciasRecalculo);
+
+        console.log("�x�️ DESTINO TEXTO:", destinoTextoAtual);
+        console.log("�x�️ DESTINO COORDS:", destLat, destLng);
+        console.log("�x�️ ORIGEM COORDS:", origemLat, origemLng);
+        console.log("�x�️ URL OSRM:", url);
+
+        const res = await fetch(url);
+        const jsonResposta = await res.json();
+        console.log("�xa� ROTA SENDO CHAMADA");
+        console.log("ROTAS RECEBIDAS:", jsonResposta.routes?.length);
+        if(!jsonResposta?.routes?.length) console.log("�xa� OSRM ERRO RESP:", JSON.stringify(jsonResposta).slice(0,200));
+
+        return jsonResposta;
+      };
+
+      let json = await buscarRotaOsrm(true);
+
+      if(forcar && !json?.routes?.length){
+        console.log("Recalculo sem rota com preferencia de heading; tentando fallback simples");
+        json = await buscarRotaOsrm(false);
+      }
 
       if(!json?.routes?.length){
        console.log("Nenhuma rota recebida no OSRM");
@@ -5810,6 +6967,8 @@ setRotaCarregando(true);
 if(rotaPrincipal.legs && rotaPrincipal.legs[0].steps){
   setStepsRota(rotaPrincipal.legs[0].steps);
   stepAtualRef.current = 0;
+  ultimoStepPreAvisadoRef.current = -1;
+  ultimoStepCurvaFaladoRef.current = -1;
 }
 
     const rotaAlt = json.routes.length > 1
@@ -5832,6 +6991,8 @@ const coordsFull = rotaPrincipal.geometry.coordinates.map((c:any)=>({
   latitude: Number(c[1]),
   longitude: Number(c[0]),
 }));
+
+setRouteCoordsFull(coordsFull);
 
 let coordsPreview = coordsFull;
 
@@ -5897,6 +7058,8 @@ if(rotaAlt){
     longitude: Number(c[0]),
   }));
 
+  setAltRouteCoordsFull(altcoordsFull);
+
   let altcoordsPreview = altcoordsFull;
 
   if(!navegando && altcoordsFull.length > 28){
@@ -5922,6 +7085,7 @@ if(rotaAlt){
   }, 600);
 
 }else{
+  setAltRouteCoordsFull([]);
   setAltRouteCoords([]);
 }
     }catch(e){
@@ -5933,12 +7097,16 @@ if(rotaAlt){
 // ===============================
 function distanciaAteRota(lat:number,lng:number){
 
-  if(routeCoords.length === 0) return 0;
+  const rotaBase = (Array.isArray(routeCoordsFull) && routeCoordsFull.length > 0)
+    ? routeCoordsFull
+    : [];
+
+  if(rotaBase.length === 0) return 0;
 
   let menor = 999999;
 
-  for(let i=0;i<routeCoords.length;i++){
-    const p = routeCoords[i];
+  for(let i=0;i<rotaBase.length;i++){
+    const p = rotaBase[i];
 
     const dx = lat - p.latitude;
     const dy = lng - p.longitude;
@@ -5950,7 +7118,7 @@ function distanciaAteRota(lat:number,lng:number){
  return menor * 111000; // metros
 }
 // ==========================================
-// �x` SISTEMA DE VOZ PROFISSIONAL (ELEVEN)
+// SISTEMA DE VOZ PROFISSIONAL (CUSTOM XTTS)
 // ==========================================
 
 let voiceEngineLogado = false;
@@ -6001,11 +7169,24 @@ async function limparPlayerCustomAtivo(){
   voicePlayerRef.current = null;
 }
 
-async function falarFallbackSistema(texto:string, opcoes?:{ forcar?:boolean }){
+async function falarFallbackSistema(texto:string, opcoes?:{ forcar?:boolean; estiloInsano?: boolean; permitirErroRota?: boolean }){
   const textoFalado = String(texto || "").trim();
   if(!textoFalado) return;
 
   const forcarFallback = !!opcoes?.forcar;
+  const estiloInsano = !!opcoes?.estiloInsano;
+  const permitirErroRota = !!opcoes?.permitirErroRota;
+
+  const contextoAtual = String(contextoAudioAtualRef.current || "").trim();
+  if(contextoAtual === "modo_comico"){
+    console.log(`FALLBACK SISTEMA BLOQUEADO: contexto=${contextoAtual}`);
+    return;
+  }
+
+  if(contextoAtual === "erro_rota" && !(forcarFallback && permitirErroRota)){
+    console.log(`FALLBACK SISTEMA BLOQUEADO: contexto=${contextoAtual}`);
+    return;
+  }
 
   if(!forcarFallback && (!USAR_TTS_SISTEMA_PRIMARIO || DESATIVAR_FALLBACK_SISTEMA_EM_CUSTOM)){
     console.log("FALLBACK BLOQUEADO");
@@ -6018,6 +7199,7 @@ async function falarFallbackSistema(texto:string, opcoes?:{ forcar?:boolean }){
   }
 
   console.log("FALLBACK SISTEMA ACIONADO");
+  console.log("VOICE_ENGINE_USADO:", "system_fallback");
 
   return new Promise<void>((resolve) => {
     let finalizado = false;
@@ -6040,8 +7222,8 @@ async function falarFallbackSistema(texto:string, opcoes?:{ forcar?:boolean }){
     try{
       Speech.speak(textoFalado, {
         language: localePorIdioma(idiomaAtual),
-        pitch: 1.0,
-        rate: 1.0,
+        pitch: estiloInsano ? 1.25 : 1.0,
+        rate: estiloInsano ? 1.06 : 1.0,
         onStart: () => console.log("FALLBACK SISTEMA INICIOU"),
         onDone: () => {
           console.log("FALLBACK SISTEMA TERMINOU");
@@ -6064,7 +7246,10 @@ async function falarFallbackSistema(texto:string, opcoes?:{ forcar?:boolean }){
 }
 
 async function reproduzirAudioBase64(audioBase64:string){
-  const base64 = String(audioBase64 || "").trim();
+  const base64 = String(audioBase64 || "")
+    .trim()
+    .replace(/^data:[^;]+;base64,/i, "")
+    .replace(/\s+/g, "");
   if(!base64){
     throw new Error("audioBase64 vazio");
   }
@@ -6128,7 +7313,10 @@ async function reproduzirAudioBase64(audioBase64:string){
     let iniciou = false;
     let timeoutBuffer:any = null;
     let timeoutGeral:any = null;
+    let timeoutFimAudio:any = null;
     let ultimoStatusLogado = "";
+    let ultimoCurrentTimeMs = 0;
+    let ultimoAvancoEmMs = Date.now();
 
     const finalizar = async (erro?:any) => {
       if(finalizado) return;
@@ -6136,6 +7324,7 @@ async function reproduzirAudioBase64(audioBase64:string){
 
       try{ if(timeoutBuffer) clearTimeout(timeoutBuffer); }catch{}
       try{ if(timeoutGeral) clearTimeout(timeoutGeral); }catch{}
+      try{ if(timeoutFimAudio) clearTimeout(timeoutFimAudio); }catch{}
 
       try{
         voicePlayerSubscriptionRef.current?.remove?.();
@@ -6166,7 +7355,7 @@ async function reproduzirAudioBase64(audioBase64:string){
     try{
       const player = createAudioPlayer(
         { uri: uriArquivo },
-        { updateInterval: 120 }
+        { updateInterval: 80 }
       );
 
       voicePlayerRef.current = player;
@@ -6184,14 +7373,18 @@ async function reproduzirAudioBase64(audioBase64:string){
       voicePlayerSubscriptionRef.current = player.addListener(
         "playbackStatusUpdate",
         (status:any) => {
+          const currentTime = Number(status?.currentTime || 0);
+          const duration = Number(status?.duration || 0);
+          const isLoaded = !!status?.isLoaded;
+          const isBuffering = !!status?.isBuffering;
           const resumoStatus = JSON.stringify({
-            isLoaded: status?.isLoaded,
+            isLoaded,
             playing: status?.playing,
             playbackState: status?.playbackState,
-            currentTime: status?.currentTime,
-            duration: status?.duration,
+            currentTime,
+            duration,
             didJustFinish: status?.didJustFinish,
-            isBuffering: status?.isBuffering,
+            isBuffering,
           });
 
           if(resumoStatus !== ultimoStatusLogado){
@@ -6207,17 +7400,40 @@ async function reproduzirAudioBase64(audioBase64:string){
           const tocando =
             !!status?.playing || status?.playbackState === "playing";
 
-          if(!iniciou && tocando){
+          if(currentTime > ultimoCurrentTimeMs + 20){
+            ultimoCurrentTimeMs = currentTime;
+            ultimoAvancoEmMs = Date.now();
+          }
+
+          const progressoRealDetectado = currentTime > 40;
+          const carregouCurto = isLoaded && duration > 0 && !isBuffering;
+
+          if(!iniciou && (tocando || progressoRealDetectado || carregouCurto)){
             iniciou = true;
             console.log("CUSTOM INICIOU");
+
+            if(duration > 0){
+              const restanteMs = Math.max(500, Math.min(20000, duration - currentTime + 350));
+              try{ if(timeoutFimAudio) clearTimeout(timeoutFimAudio); }catch{}
+              timeoutFimAudio = setTimeout(() => {
+                finalizar();
+              }, restanteMs);
+            }
           }
 
           const terminou =
             !!status?.didJustFinish ||
             status?.playbackState === "ended" ||
-            status?.playbackState === "idle";
+            (iniciou && duration > 0 && currentTime >= Math.max(0, duration - 120));
 
-          if(iniciou && terminou){
+          const progressoEstagnado =
+            iniciou &&
+            duration > 0 &&
+            currentTime > 0 &&
+            (Date.now() - ultimoAvancoEmMs) > 1800 &&
+            currentTime >= Math.max(0, duration - 220);
+
+          if(iniciou && (terminou || progressoEstagnado)){
             finalizar();
           }
         }
@@ -6239,13 +7455,22 @@ const USAR_TTS_SISTEMA_PRIMARIO = VOICE_ENGINE_ENV === "system";
 const DESATIVAR_FALLBACK_SISTEMA_EM_CUSTOM = true;
 
 const VOICE_CUSTOM_TIMEOUT_PADRAO_MS = Math.max(
-  180000,
-  Number((globalThis as any)?.process?.env?.EXPO_PUBLIC_VOICE_TIMEOUT_MS || 180000) || 180000
+  25000,
+  Math.min(
+    60000,
+    Number((globalThis as any)?.process?.env?.EXPO_PUBLIC_VOICE_TIMEOUT_MS || 25000) || 25000
+  )
 );
-const VOICE_CUSTOM_TIMEOUT_MODO_COMICO_MS = Math.max(240000, VOICE_CUSTOM_TIMEOUT_PADRAO_MS);
-const VOICE_CUSTOM_MAX_TENTATIVAS_PADRAO = 2;
-const VOICE_CUSTOM_MAX_TENTATIVAS_MODO_COMICO = 3;
 
+const VOICE_CUSTOM_TIMEOUT_MODO_COMICO_MS = 45000;
+const VOICE_CUSTOM_TIMEOUT_ERRO_ROTA_MS = Math.max(
+  18000,
+  Math.min(
+    60000,
+    Number((globalThis as any)?.process?.env?.EXPO_PUBLIC_VOICE_TIMEOUT_ERRO_ROTA_MS || 18000) || 18000
+  )
+);
+const VOICE_CUSTOM_MAX_TENTATIVAS_PADRAO = 2;
 // único servidor permitido
 const VOICE_SERVER_URL_REMOTO_PADRAO = "https://insanegps.com/speak";
 
@@ -6253,13 +7478,20 @@ const VOICE_SERVER_URL_REMOTO_PADRAO = "https://insanegps.com/speak";
 // senão, usa o remoto padrão
 const VOICE_SERVER_URL_ENV = String(
   (globalThis as any)?.process?.env?.EXPO_PUBLIC_VOICE_SERVER_URL || ""
-).trim();
+).trim() === "https://gpsinsane.onrender.com/speak"
+  ? "https://insanegps.com/speak"
+  : String((globalThis as any)?.process?.env?.EXPO_PUBLIC_VOICE_SERVER_URL || "").trim();
 
 const VOICE_SERVER_URLS_ENV = String(
   (globalThis as any)?.process?.env?.EXPO_PUBLIC_VOICE_SERVER_URLS || ""
 )
   .split(",")
-  .map((item) => String(item || "").trim())
+  .map((item) => {
+    const url = String(item || "").trim();
+    return url === "https://gpsinsane.onrender.com/speak"
+      ? "https://insanegps.com/speak"
+      : url;
+  })
   .filter(Boolean);
 
 const VOICE_SERVER_URL = VOICE_SERVER_URL_ENV || VOICE_SERVER_URL_REMOTO_PADRAO;
@@ -6269,18 +7501,24 @@ const VOICE_SERVER_URLS = Array.from(new Set([
   VOICE_SERVER_URL,
   ...VOICE_SERVER_URLS_ENV,
   VOICE_SERVER_URL_REMOTO_PADRAO,
-]));
-
+].filter(Boolean)));
 
 function extrairAudioBase64Resposta(txt:string){
   const bruto = String(txt || "").trim();
   if(!bruto) return null;
   if(bruto.startsWith("<")) return null;
 
+  const normalizarBase64Audio = (valor:any) => {
+    const texto = String(valor || "").trim();
+    if(!texto) return "";
+    const semPrefixo = texto.replace(/^data:[^;]+;base64,/i, "");
+    return semPrefixo.replace(/\s+/g, "").trim();
+  };
+
   if(bruto.startsWith("{")){
     try{
       const json = JSON.parse(bruto);
-      const audio = String(json?.audioBase64 || json?.audio || json?.base64 || "").trim();
+      const audio = normalizarBase64Audio(json?.audioBase64 || json?.audio || json?.base64 || "");
       if(audio) {
         console.log(`AUDIO BASE64 EXTRAÍDO - TAMANHO: ${audio.length}, INÍCIO: ${audio.slice(0, 50)}`);
         
@@ -6300,7 +7538,8 @@ function extrairAudioBase64Resposta(txt:string){
   }
 
   console.log(`RESPOSTA NÃO JSON - TIPO: ${bruto.slice(0, 50)}`);
-  return bruto;
+  const brutoNormalizado = normalizarBase64Audio(bruto);
+  return brutoNormalizado || null;
 }
 
 function extrairMetaRespostaVoz(txt:string){
@@ -6345,8 +7584,12 @@ function limparTextoFilaAudio(valor:any){
     .trim();
 }
 
-async function falar(texto:string, opts?:{ _drain?:boolean; contexto?:VoiceContext }){
-  const contextoPadrao: VoiceContext = opts?.contexto || "instrucao";
+async function falar(texto:string, opts?:{ _drain?:boolean; contexto?:VoiceContext; motivo?:VoiceContext; ehXingamento?: boolean }){
+  const contextoPadrao: VoiceContext = opts?.contexto || opts?.motivo || "instrucao";
+  const motivoPadrao: VoiceContext = opts?.motivo || contextoPadrao;
+  const contextoPrioritario =
+  contextoPadrao === "rota_critica" ||
+  contextoPadrao === "erro_rota";
 
   if(!opts?._drain){
     const textoOriginal = String(texto || "").trim();
@@ -6374,12 +7617,39 @@ async function falar(texto:string, opts?:{ _drain?:boolean; contexto?:VoiceConte
         return acc;
       }, []);
 
+    const novosItens: AudioQueueItem[] = [];
+
     for(const chunk of frases){
       const c = String(chunk || "").trim();
       if(c && /[A-Za-zÀ-ÿ0-9]/.test(c)){
         console.log("VOICE:", c);
-        filaAudioRef.current.push({ texto: c, contexto: contextoPadrao });
+        novosItens.push({
+          texto: c,
+          contexto: contextoPadrao,
+          motivo: motivoPadrao,
+          criadoEm: Date.now(),
+          ehXingamento: !!opts?.ehXingamento,
+        });
       }
+    }
+
+        if(contextoPrioritario){
+      // Só erro_rota pode cortar piada. Instrução comum não corta,
+      // porque isso fazia a piada parar sem final e sem risada.
+      if(contextoPadrao === "erro_rota" || contextoPadrao === "rota_critica"){
+        filaAudioRef.current = filaAudioRef.current.filter((item) => {
+          if(typeof item !== "string") return item.contexto !== "modo_comico";
+          if(/^__PAUSE_(\d+)__$/.test(item)) return false;
+          if(isRisadaToken(item)) return false;
+          return true;
+        });
+      }
+
+      for(let i = novosItens.length - 1; i >= 0; i--){
+        filaAudioRef.current.unshift(novosItens[i]);
+      }
+    }else{
+      filaAudioRef.current.push(...novosItens);
     }
   }
 
@@ -6408,10 +7678,25 @@ async function falar(texto:string, opts?:{ _drain?:boolean; contexto?:VoiceConte
         typeof item === "string"
           ? "instrucao"
           : (item.contexto || "instrucao");
+      const motivoAtual: VoiceContext =
+        typeof item === "string"
+          ? "instrucao"
+          : (item.motivo || item.contexto || "instrucao");
+      const ehXingamentoAtual = typeof item !== "string" && !!item?.ehXingamento;
+      const tentativasItemAtual = typeof item !== "string"
+        ? Number(item?.tentativasCustom || 0)
+        : 0;
+      contextoAudioAtualRef.current = contexto;
 
       const bruto = typeof item === "string"
         ? String(item || "").trim()
         : String(item?.texto || "").trim();
+
+      const criadoEm =
+        typeof item === "string"
+          ? 0
+          : Number(item?.criadoEm || 0);
+      const idadeMs = criadoEm > 0 ? (Date.now() - criadoEm) : 0;
 
       if(!bruto) continue;
 
@@ -6435,24 +7720,69 @@ async function falar(texto:string, opts?:{ _drain?:boolean; contexto?:VoiceConte
       const proximo = limparTextoFilaAudio(bruto);
       if(!proximo || !/[A-Za-zÀ-ÿ0-9]/.test(proximo)) continue;
 
+      if(contexto === "instrucao" && idadeMs > 15000){
+        console.log(`VOICE: descartando instrução atrasada (${idadeMs}ms)`);
+        continue;
+      }
+
+            if(contexto === "modo_comico"){
+  const existeErroOuCriticoPendente = filaAudioRef.current.some((filaItem) => (
+    typeof filaItem !== "string" &&
+    (
+      filaItem.contexto === "erro_rota" ||
+      filaItem.contexto === "rota_critica"
+    )
+  ));
+
+  if(existeErroOuCriticoPendente){
+    console.log("VOICE: modo cômico cedeu prioridade só para erro de rota/crítico");
+    filaAudioRef.current.push({
+      texto: proximo,
+      contexto: "modo_comico",
+      motivo: "modo_comico",
+      criadoEm: Date.now(),
+    });
+    continue;
+  }
+}
+
+      const xingamentoCritico = contexto === "erro_rota" && ehXingamentoAtual;
       const timeoutMs = contexto === "modo_comico"
         ? VOICE_CUSTOM_TIMEOUT_MODO_COMICO_MS
-        : VOICE_CUSTOM_TIMEOUT_PADRAO_MS;
-
+        : contexto === "erro_rota"
+          ? VOICE_CUSTOM_TIMEOUT_ERRO_ROTA_MS
+          : VOICE_CUSTOM_TIMEOUT_PADRAO_MS;
       const tentativasMax = contexto === "modo_comico"
-        ? VOICE_CUSTOM_MAX_TENTATIVAS_MODO_COMICO
-        : VOICE_CUSTOM_MAX_TENTATIVAS_PADRAO;
+        ? 1
+        : contexto === "erro_rota"
+          ? 1
+          : VOICE_CUSTOM_MAX_TENTATIVAS_PADRAO;
+      const contextoCritico =
+        contexto === "instrucao" ||
+        contexto === "rota_critica" ||
+        contexto === "erro_rota";
+      const endpoints = contexto === "modo_comico"
+        ? [VOICE_SERVER_URLS[0] || VOICE_SERVER_URL]
+        : (xingamentoCritico
+          ? VOICE_SERVER_URLS
+          : contextoCritico
+          ? [VOICE_SERVER_URLS[0] || VOICE_SERVER_URL]
+          : VOICE_SERVER_URLS);
+
+      const textoSintese = xingamentoCritico
+        ? String(proximo || "").slice(0, 160)
+        : proximo;
 
       console.log("VOICE ENGINE:", "custom");
       console.log(`VOICE CONTEXTO: ${contexto}`);
-      console.log("VOICE TEXTO:", proximo);
+      console.log("VOICE TEXTO:", textoSintese);
       console.log(`VOICE CUSTOM TIMEOUT: ${timeoutMs}ms`);
 
       let tocouCustom = false;
       let ultimoErroCustom:any = null;
 
       for(let tentativa = 1; tentativa <= tentativasMax && !tocouCustom; tentativa++){
-        for(const endpoint of VOICE_SERVER_URLS){
+        for(const endpoint of endpoints){
           try{
             const response = await new Promise<Response>((resolve, reject) => {
               const timeoutId = setTimeout(() => {
@@ -6463,7 +7793,8 @@ async function falar(texto:string, opts?:{ _drain?:boolean; contexto?:VoiceConte
                 method:"POST",
                 headers:{ "Content-Type":"application/json" },
                 body: JSON.stringify({
-                  text: proximo,
+                  text: textoSintese,
+                  texto: textoSintese,
                   speed: modoComico ? 0.94 : 0.92,
                   mode: "insana"
                 })
@@ -6480,6 +7811,9 @@ async function falar(texto:string, opts?:{ _drain?:boolean; contexto?:VoiceConte
 
             const responseText = await response.text();
             console.log("VOICE STATUS:", response.status, endpoint);
+            if(!response.ok){
+              console.log("VOICE ERROR BODY:", responseText);
+            }
 
             const meta = extrairMetaRespostaVoz(responseText);
             const audioBase64 = String(extrairAudioBase64Resposta(responseText) || "").trim();
@@ -6490,9 +7824,11 @@ async function falar(texto:string, opts?:{ _drain?:boolean; contexto?:VoiceConte
 
             const fingerprint = fingerprintAudioBase64(audioBase64);
             ultimoAudioFingerprintRef.current = fingerprint;
-            ultimoAudioTextoRef.current = proximo;
+            ultimoAudioTextoRef.current = textoSintese;
 
             await reproduzirAudioBase64(audioBase64);
+
+            console.log("VOICE_ENGINE_USADO:", "custom");
 
             falhasCustomConsecutivasRef.current = 0;
             bloquearFallbackPorCustomRef.current = false;
@@ -6535,14 +7871,51 @@ async function falar(texto:string, opts?:{ _drain?:boolean; contexto?:VoiceConte
           msgErro.includes("fetch") ||
           msgErro.includes("failed to fetch");
 
-        const podeFallbackSistema =
-          contexto === "rota_critica" ||
-          contexto === "erro_rota" ||
-          contexto === "instrucao";
+        if(ehXingamentoAtual){
+          console.log(`VOICE XINGAMENTO CUSTOM FALHOU: contexto=${contexto}; sem fallback para preservar voz insana`);
+          console.log("VOICE XINGAMENTO: sem retry custom para erro_rota (maximo 1 tentativa)");
+          try{
+            await falarFallbackSistema(proximo, {
+              forcar: true,
+              estiloInsano: true,
+              permitirErroRota: true,
+            });
+          }catch(errorFallbackXingamento){
+            console.log("VOICE XINGAMENTO FALLBACK SISTEMA ERRO:", errorFallbackXingamento);
+          }
+          continue;
+        }
 
-        if(podeFallbackSistema && falhaDeTimeoutRedeOuAbort){
+        if(String(motivoAtual || "") === "modo_comico"){
+          // evita cenário "só risada" quando falha TTS de uma piada
+          filaAudioRef.current = filaAudioRef.current.filter((filaItem) => {
+            if(typeof filaItem !== "string") return filaItem.contexto !== "modo_comico";
+            const token = String(filaItem || "").trim();
+            if(/^__PAUSE_(\d+)__$/.test(token)) return false;
+            if(isRisadaToken(token)) return false;
+            return true;
+          });
+
+          if(falhaDeTimeoutRedeOuAbort){
+            console.log("VOICE MODO COMICO TIMEOUT: fala abandonada sem retry");
+          }else{
+            console.log("VOICE MODO COMICO FALHOU: fala abandonada sem retry");
+          }
+          continue;
+        }
+
+        const contextoAtualTexto = String(contexto || "");
+        const motivoAtualTexto = String(motivoAtual || "");
+        const podeFallbackSistema =
+          !ehXingamentoAtual &&
+          contextoAtualTexto !== "modo_comico" &&
+          motivoAtualTexto !== "modo_comico" &&
+          falhasCustomConsecutivasRef.current >= 1;
+
+        if(podeFallbackSistema){
           console.log(`VOICE FALLBACK SISTEMA: contexto=${contexto}`);
           try{
+            console.log("VOICE_ENGINE_USADO:", "system_fallback");
             await falarFallbackSistema(proximo, { forcar: true });
           }catch(errorFallback){
             console.log("VOICE FALLBACK SISTEMA ERRO:", errorFallback);
@@ -6554,6 +7927,7 @@ async function falar(texto:string, opts?:{ _drain?:boolean; contexto?:VoiceConte
     }
   }finally{
     reproduzindoRef.current = false;
+    contextoAudioAtualRef.current = null;
     falandoAgoraRef.current = false;
     falandoRef.current = false;
     bloquearFallbackPorCustomRef.current = false;
@@ -6793,16 +8167,16 @@ function stepEhFalavel(step:any){
 
   const tipo = String(step?.maneuver?.type || "").toLowerCase();
   const modifier = String(step?.maneuver?.modifier || "").toLowerCase();
-  const nomeRua = String(step?.name || step?.ref || "").trim();
+  const nomeRua = String(step?.name || step?.ref || step?.destinations || "").trim();
   const instrucaoBase = String(step?.instruction || "").trim();
 
-  // sempre falar chegada
-  if(tipo === "arrive") return true;
+  if(instrucaoBase) return true;
+  if(nomeRua) return true;
 
-  // sempre falar rotatória
+  if(tipo === "arrive") return true;
   if(tipo === "roundabout" || tipo === "rotary") return true;
 
-  if(instrucaoBase && (
+  if(
     tipo === "turn" ||
     tipo === "continue" ||
     tipo === "new name" ||
@@ -6812,32 +8186,16 @@ function stepEhFalavel(step:any){
     tipo === "end of road" ||
     tipo === "on ramp" ||
     tipo === "off ramp"
-  )){
+  ){
     return true;
   }
 
-  // falar curvas reais
   if(
     modifier.includes("left") ||
     modifier.includes("right") ||
+    modifier.includes("straight") ||
     modifier.includes("esquerda") ||
     modifier.includes("direita")
-  ){
-    return true;
-  }
-
-  // se for continue/straight sem nome de via, não vale a pena falar
-  if(
-    (tipo === "continue" || tipo === "new name" || tipo === "notification" || tipo === "depart") &&
-    !nomeRua
-  ){
-    return false;
-  }
-
-  // straight/continue fala quando houver via relevante
-  if(
-    (modifier.includes("straight") || tipo === "continue" || tipo === "depart") &&
-    nomeRua.length > 0
   ){
     return true;
   }
@@ -6983,8 +8341,27 @@ if(tipo === "arrive" && distancia <= 40){
 
 ultimaInstrucaoRef.current = chaveUnica;
 
-const fraseFinal = montarFraseFinal("", frase);
-falar(fraseFinal, { contexto: "instrucao" });
+const deveFalarInstrucao =
+  tipo === "arrive" ||
+  tipo === "roundabout" ||
+  tipo === "rotary" ||
+  lado === "left" ||
+  lado === "right";
+
+if(!deveFalarInstrucao){
+  return;
+}
+
+const fraseCurta =
+  lado === "left"
+    ? "Vire à esquerda"
+    : lado === "right"
+      ? "Vire à direita"
+      : tipo === "arrive"
+        ? "Chegando ao destino"
+        : "Atenção à rotatória";
+
+falar(fraseCurta, { contexto: "instrucao" });
 }
  // ==========================================
  // �x� SALVAR REPORT LOCAL
@@ -7135,6 +8512,7 @@ function bancoWrongLinesPorIdiomaSeguro(idioma: IdiomaId): Record<number, string
 
 function listaWrongLinesPorNivelComFallback(nivel:number, idioma: IdiomaId): string[]{
   const nivelSeguro = Math.max(0, Math.min(4, Number(nivel) || 0));
+  if(nivelSeguro <= 0) return [];
   const bancoIdioma = bancoWrongLinesPorIdiomaSeguro(idioma);
 
   const listaIdioma = bancoIdioma?.[nivelSeguro];
@@ -7145,18 +8523,6 @@ function listaWrongLinesPorNivelComFallback(nivel:number, idioma: IdiomaId): str
   const listaPtMesmoNivel = WRONG_LINES_POR_IDIOMA.pt?.[nivelSeguro];
   if(Array.isArray(listaPtMesmoNivel) && listaPtMesmoNivel.length > 0){
     return listaPtMesmoNivel;
-  }
-
-  if(nivelSeguro !== 0){
-    const listaIdiomaNivelZero = bancoIdioma?.[0];
-    if(Array.isArray(listaIdiomaNivelZero) && listaIdiomaNivelZero.length > 0){
-      return listaIdiomaNivelZero;
-    }
-
-    const listaPtNivelZero = WRONG_LINES_POR_IDIOMA.pt?.[0];
-    if(Array.isArray(listaPtNivelZero) && listaPtNivelZero.length > 0){
-      return listaPtNivelZero;
-    }
   }
 
   return [];
@@ -7228,6 +8594,7 @@ function resetarControleChegadaDestino(){
 
 function linhasComicasDoNivel(nivel:number): LinhaComica[]{
   const nivelSeguro = Math.max(0, Math.min(4, Number(nivel) || 0)) as 0|1|2|3|4;
+  if(nivelSeguro <= 0) return [];
 
   if(idiomaAtual === "pt"){
     const estruturadasPt = LINHAS_COMICAS_PT_POR_NIVEL[nivelSeguro];
@@ -7240,40 +8607,98 @@ function linhasComicasDoNivel(nivel:number): LinhaComica[]{
   return listaTexto.map((texto)=>({ texto: String(texto || "") }));
 }
 
-function escolherBancoWrongLine(niveisPreferidos?: number[]): LinhaComica[] {
-  const nivelMaximo = nivelPermitido();
+function sortearNivelPorPesos(pesos:Array<{ nivel:number; peso:number }>): number {
+  const pesosValidos = pesos
+    .map((item)=>({
+      nivel: Math.max(0, Math.min(4, Number(item?.nivel) || 0)),
+      peso: Math.max(0, Number(item?.peso) || 0),
+    }))
+    .filter((item)=>item.peso > 0);
 
-  const niveisBase = Array.isArray(niveisPreferidos) && niveisPreferidos.length > 0
-    ? niveisPreferidos
-    : [nivelMaximo, nivelMaximo - 1, nivelMaximo - 2, nivelMaximo - 3, nivelMaximo - 4, 0];
+  if(pesosValidos.length === 0) return 0;
 
-  const niveisValidos = Array.from(new Set(
-    niveisBase
-      .map((n)=>Math.max(0, Math.min(4, Number(n) || 0)))
-      .filter((n)=> n <= nivelMaximo || n === 0)
-  ));
+  const total = pesosValidos.reduce((acc, item)=>acc + item.peso, 0);
+  if(total <= 0) return pesosValidos[0].nivel;
 
-  for(const nivel of niveisValidos){
-    const lista = linhasComicasDoNivel(nivel);
-    if(Array.isArray(lista) && lista.length > 0){
-      return lista;
-    }
+  let alvo = Math.random() * total;
+  for(const item of pesosValidos){
+    alvo -= item.peso;
+    if(alvo <= 0) return item.nivel;
   }
 
-  for(let nivel = nivelMaximo; nivel >= 0; nivel--){
-    const lista = linhasComicasDoNivel(nivel);
-    if(Array.isArray(lista) && lista.length > 0){
-      return lista;
-    }
-  }
-
-  return linhasComicasDoNivel(0);
+  return pesosValidos[pesosValidos.length - 1].nivel;
 }
 
-function pegarWrongLine(niveisPreferidos?: number[]): string {
-  const banco = escolherBancoWrongLine(niveisPreferidos)
-    .filter((item)=>!!String(item?.texto || "").trim());
-  if(!banco.length) return "";
+function niveisFallbackPorPreferencia(principal:number, nivelSelecionado:number): number[] {
+  const p = Math.max(0, Math.min(4, Number(principal) || 0));
+  const selecionado = Math.max(0, Math.min(4, Number(nivelSelecionado) || 0));
+
+  let permitidos:number[] = [];
+  if(selecionado === 1){
+    permitidos = [1];
+  }else if(selecionado === 2){
+    permitidos = [2, 1];
+  }else if(selecionado === 3){
+    permitidos = [3, 2, 1];
+  }else if(selecionado >= 4){
+    // Nível 4: 70% nível 4, 20% nível 3, 10% nível 2, 0% nível 1.
+    permitidos = [4, 3, 2];
+  }
+
+  const base = [p, selecionado, ...permitidos];
+  return Array.from(new Set(base.filter((n)=>permitidos.includes(n))));
+}
+
+function escolherNivelPonderadoXingamento(nivelSelecionado: 0|1|2|3|4): 0|1|2|3|4 {
+  if(nivelSelecionado <= 0) return 0;
+  if(nivelSelecionado === 1) return 1;
+
+  if(nivelSelecionado === 2){
+    return sortearNivelPorPesos([
+      { nivel: 2, peso: 80 },
+      { nivel: 1, peso: 20 },
+    ]) as 0|1|2|3|4;
+  }
+
+  if(nivelSelecionado === 3){
+    return sortearNivelPorPesos([
+      { nivel: 3, peso: 75 },
+      { nivel: 2, peso: 20 },
+      { nivel: 1, peso: 5 },
+    ]) as 0|1|2|3|4;
+  }
+
+  if(forcarProximosNivel4Ref.current > 0){
+    return 4;
+  }
+
+  return sortearNivelPorPesos([
+    { nivel: 4, peso: 70 },
+    { nivel: 3, peso: 20 },
+    { nivel: 2, peso: 10 },
+    ]) as 0|1|2|3|4;
+  }
+
+function pegarWrongLine(): { frase: string; nivelSelecionado: 0|1|2|3|4; nivelUsado: 0|1|2|3|4 } | null {
+  const nivelSelecionado = Math.max(0, Math.min(4, nivelPermitido())) as 0|1|2|3|4;
+  if(nivelSelecionado <= 0) return null;
+  const nivelPreferido = escolherNivelPonderadoXingamento(nivelSelecionado);
+  const niveisTentativa = niveisFallbackPorPreferencia(nivelPreferido, nivelSelecionado);
+
+  let nivelUsado: 0|1|2|3|4 = 0;
+  let banco: LinhaComica[] = [];
+
+  for(const nivel of niveisTentativa){
+    const lista = linhasComicasDoNivel(nivel)
+      .filter((item)=>!!String(item?.texto || "").trim());
+    if(lista.length > 0){
+      banco = lista;
+      nivelUsado = nivel as 0|1|2|3|4;
+      break;
+    }
+  }
+
+  if(!banco.length) return null;
 
   const historico = historicoWrongLinesRef.current;
   const ultimo = historico[historico.length - 1] || "";
@@ -7296,7 +8721,7 @@ function pegarWrongLine(niveisPreferidos?: number[]): string {
 
   const menosUsadas = candidatos.filter((linha)=>Number(memoriaErros.current[String(linha?.texto || "").trim()] || 0) === menorUso);
   const linhaEscolhida = menosUsadas[Math.floor(Math.random() * menosUsadas.length)] || candidatos[0] || null;
-  if(!linhaEscolhida) return "";
+  if(!linhaEscolhida) return null;
 
   const chaveHistorico = String(linhaEscolhida?.texto || "").trim();
 const nomeFalavel =
@@ -7313,50 +8738,89 @@ if(historico.length > 50){
 }
 
 const fraseFinal = montarFraseFinal(fraseEscolhida);
-return fraseFinal;
+
+if(nivelSelecionado === 4 && forcarProximosNivel4Ref.current > 0){
+  if(nivelUsado === 4){
+    forcarProximosNivel4Ref.current = Math.max(0, forcarProximosNivel4Ref.current - 1);
+  }
+}
+
+if(nivelSelecionado === 4 && (nivelUsado === 2 || nivelUsado === 3)){
+  // Regra: após sair nível 2/3 com usuário no nível 4, força duas próximas no nível 4.
+  forcarProximosNivel4Ref.current = 2;
+}
+
+return {
+  frase: fraseFinal,
+  nivelSelecionado,
+  nivelUsado,
+};
 }
 function falarErroRota(){
 
   const agora = Date.now();
 
-  // agressivo: reduz bloqueio para xingar em cada ciclo de erro real
-  if(agora - ultimoAviso.current < 350){
+  // evita excesso de repeticao em eventos longos de fora de rota
+  if(agora - ultimoAviso.current < 1200){
     return;
   }
 
   ultimoAviso.current = agora;
   contadorErros.current++;
-  contadorXingamentosRef.current++;
+  const xingamentosAlvoPorErro = 1;
+  const falasErro:string[] = [];
 
-  const nivelMax = nivelPermitido();
-  const niveisPermitidos = niveisXingamentoProgressivo(
-    Math.max(0, Math.min(4, nivelMax)) as 0|1|2|3|4,
-    contadorErros.current
-  );
-  const frase = pegarWrongLine(niveisPermitidos);
+  for(let i = 0; i < xingamentosAlvoPorErro; i++){
+    const selecao = pegarWrongLine();
+    const frase = String(selecao?.frase || "").trim();
 
-  if(frase){
-    const textoErro = limparTextoFilaAudio(frase);
-    if(!textoErro) return;
-
-    if(reproduzindoRef.current || filaAudioRef.current.length > 0){
-      const restanteSemPausa = filaAudioRef.current.filter((item)=>{
-        const bruto = typeof item === "string" ? item : item?.texto;
-        return !/^__PAUSE_(\d+)__$/.test(String(bruto || "").trim());
-      });
-      filaAudioRef.current = [{ texto: textoErro, contexto: "erro_rota" }, ...restanteSemPausa];
-      return;
+    if(selecao){
+      console.log("XINGAMENTO_NIVEL_ESCOLHIDO:", selecao.nivelSelecionado);
+      console.log("XINGAMENTO_NIVEL_USADO:", selecao.nivelUsado);
     }
 
-    falar(textoErro, { contexto: "erro_rota" });
-    return;
+    const textoErro = limparTextoFilaAudio(frase);
+    if(!textoErro) continue;
+    if(falasErro.includes(textoErro)) continue;
+    falasErro.push(textoErro);
   }
 
-  const fallbackNivelZero = listaWrongLinesPorNivelComFallback(0, idiomaAtual);
-  falar(
-    normalizarTextoFalado(fallbackNivelZero[0] || WRONG_LINES_POR_IDIOMA.pt?.[0]?.[0] || "Recalculating route."),
-    { contexto: "erro_rota" }
-  );
+  if(falasErro.length === 0){
+    const fallbackErro = limparTextoFilaAudio(
+      idiomaAtual === "pt"
+        ? "Voce errou a rota de novo."
+        : "You missed the route again."
+    );
+
+    if(fallbackErro){
+      falasErro.push(fallbackErro);
+      console.log("XINGAMENTO FALLBACK: frase de emergencia aplicada");
+    }else{
+      console.log("VOICE_ENGINE_USADO:", "silenciado_sem_frase_nivel_1_4");
+      return;
+    }
+  }
+
+  contadorXingamentosRef.current += falasErro.length;
+
+  const itensErro = falasErro.map((textoErro) => ({
+    texto: textoErro,
+    contexto: "erro_rota" as VoiceContext,
+    motivo: "erro_rota" as VoiceContext,
+    ehXingamento: true,
+    criadoEm: Date.now(),
+    tentativasCustom: 0,
+  }));
+
+  const restanteSemPausa = filaAudioRef.current.filter((item)=>{
+    const bruto = typeof item === "string" ? item : item?.texto;
+    return !/^__PAUSE_(\d+)__$/.test(String(bruto || "").trim());
+  });
+
+  filaAudioRef.current = [...itensErro, ...restanteSemPausa];
+  setTimeout(() => {
+    drenaFilaAudio();
+  }, 30);
 }
 const centerPreviewAndroid =
   !navegando &&
@@ -7428,15 +8892,40 @@ const androidMainMapHtml = useMemo(() => {
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" />
     <style>
-  html, body, #map {
+  html, body, #map-stage {
     margin:0;
     padding:0;
     width:100%;
     height:100%;
   }
 
+  #map-stage {
+    position: relative;
+    overflow: hidden;
+    background:${modoNoturno ? "#0b1220" : "#d7dde5"};
+  }
+
+  #map-rotator {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 180vmax;
+    height: 180vmax;
+    transform: translate(-50%, -50%) rotate(0deg);
+    transform-origin: 50% 50%;
+    will-change: transform;
+  }
+
+  #map {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
   body {
     background:${modoNoturno ? "#0b1220" : "#d7dde5"};
+    overflow:hidden;
   }
 
   .leaflet-container {
@@ -7584,7 +9073,11 @@ const androidMainMapHtml = useMemo(() => {
 </style>
   </head>
   <body>
-    <div id="map"></div>
+    <div id="map-stage">
+      <div id="map-rotator">
+        <div id="map"></div>
+      </div>
+    </div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
       const post = (data) => {
@@ -7648,13 +9141,14 @@ const androidMainMapHtml = useMemo(() => {
         return normalizarAngulo(toDeg(Math.atan2(y, x)));
       };
 
+      const mapRotatorEl = document.getElementById('map-rotator');
+
       const aplicarRotacaoMapa = (heading) => {
-        const container = map.getContainer ? map.getContainer() : null;
-        if(!container) return;
+        if(!mapRotatorEl) return;
 
         const valor = Number.isFinite(Number(heading)) ? Number(heading) : 0;
-        container.style.transformOrigin = '50% 50%';
-        container.style.transform = 'rotate(' + (-normalizarAngulo(valor)).toFixed(2) + 'deg)';
+        const rotacao = -normalizarAngulo(valor);
+        mapRotatorEl.style.transform = 'translate(-50%, -50%) rotate(' + rotacao.toFixed(2) + 'deg)';
       };
 
       let ultimoHeadingSuave = 0;
@@ -7699,13 +9193,105 @@ const androidMainMapHtml = useMemo(() => {
         });
       };
 
-      L.tileLayer('${modoNoturno
-  ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-  : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"}', {
-        subdomains: 'abcd',
-        maxZoom: 20,
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-      }).addTo(map);
+      const modoNoturnoAtivo = ${modoNoturno ? "true" : "false"};
+      const TILE_PROVIDERS = modoNoturnoAtivo
+        ? [
+            {
+              url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+              options: {
+                subdomains: 'abcd',
+                maxZoom: 19,
+                tileSize: 256,
+                attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+              }
+            },
+            {
+              url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+              options: {
+                subdomains: 'abc',
+                maxZoom: 19,
+                tileSize: 256,
+                attribution: '&copy; OpenStreetMap contributors'
+              }
+            },
+            {
+              url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+              options: {
+                subdomains: 'abc',
+                maxZoom: 19,
+                tileSize: 256,
+                attribution: '&copy; OpenStreetMap contributors, HOT'
+              }
+            }
+          ]
+        : [
+            {
+              url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+              options: {
+                subdomains: 'abcd',
+                maxZoom: 19,
+                tileSize: 256,
+                attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+              }
+            },
+            {
+              url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+              options: {
+                subdomains: 'abc',
+                maxZoom: 19,
+                tileSize: 256,
+                attribution: '&copy; OpenStreetMap contributors'
+              }
+            },
+            {
+              url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+              options: {
+                subdomains: 'abc',
+                maxZoom: 19,
+                tileSize: 256,
+                attribution: '&copy; OpenStreetMap contributors, HOT'
+              }
+            }
+          ];
+
+      let tileLayer = null;
+      let tileProviderIndex = 0;
+      let tileErrorCount = 0;
+      let tileLoadCount = 0;
+
+      const aplicarTileProvider = (index) => {
+        const idxSeguro = Math.max(0, Math.min(TILE_PROVIDERS.length - 1, Number(index) || 0));
+        const provider = TILE_PROVIDERS[idxSeguro];
+
+        if(tileLayer){
+          try { map.removeLayer(tileLayer); } catch (e) {}
+        }
+
+        tileProviderIndex = idxSeguro;
+        tileErrorCount = 0;
+        tileLoadCount = 0;
+
+        tileLayer = L.tileLayer(provider.url, provider.options).addTo(map);
+
+        tileLayer.on('tileload', function(){
+          tileLoadCount += 1;
+        });
+
+        tileLayer.on('tileerror', function(){
+          tileErrorCount += 1;
+          if(tileErrorCount >= 8 && tileProviderIndex < TILE_PROVIDERS.length - 1){
+            aplicarTileProvider(tileProviderIndex + 1);
+          }
+        });
+
+        setTimeout(function(){
+          if(tileLoadCount === 0 && tileProviderIndex < TILE_PROVIDERS.length - 1){
+            aplicarTileProvider(tileProviderIndex + 1);
+          }
+        }, 2200);
+      };
+
+      aplicarTileProvider(0);
 
       map.on('click', function(e){
         post({ type:'tap', latitude:e.latlng.lat, longitude:e.latlng.lng });
@@ -7873,11 +9459,11 @@ if (pontos.length > 1) {
               lat,
               lng,
               ultimoHeadingSuave,
-              velocidadeKmh < 20 ? 16 : velocidadeKmh < 60 ? 28 : 42
+              velocidadeKmh < 20 ? 40 : velocidadeKmh < 60 ? 62 : 86
             );
             const centroAtual = map.getCenter();
             const delta = distanciaMetros(centroAtual.lat, centroAtual.lng, centerAhead[0], centerAhead[1]);
-            const zoomDesejado = velocidadeKmh < 20 ? 20.45 : velocidadeKmh < 60 ? 19.95 : 19.4;
+            const zoomDesejado = velocidadeKmh < 20 ? 17.95 : velocidadeKmh < 60 ? 17.65 : 17.35;
 
             if (Math.abs(Number(map.getZoom()) - zoomDesejado) > 0.05 || !ultimoCentroFollow || delta > 1.5) {
               map.setView(centerAhead, zoomDesejado, { animate:false });
@@ -8012,10 +9598,11 @@ if(!aceitouTermo){
  const registro = {
   aceitou:true,
   data:new Date().toISOString(),
-  versao:"1.0",
+  versao:TERMO_VERSAO_ATUAL,
  };
 
  await AsyncStorage.setItem("aceitou_termo","sim");
+ await AsyncStorage.setItem("aceitou_termo_versao", TERMO_VERSAO_ATUAL);
  await AsyncStorage.setItem("aceite_registrado", JSON.stringify(registro));
 
  setAceitouTermo(true);
@@ -8057,87 +9644,6 @@ if(!aceitouTermo){
   )
 }
 
-if(!aceitouTermo){
-  if(!gpsPronto){
-  return(
-    <View style={{
-      flex:1,
-      backgroundColor:"#000",
-      justifyContent:"center",
-      alignItems:"center"
-    }}>
-      <Text style={{color:"#fff",fontSize:18}}>
-        Obtendo localização...
-      </Text>
-    </View>
-  );
-}
-
-  return(
-    <View style={{
-      flex:1,
-      backgroundColor:"#000",
-      justifyContent:"center",
-      alignItems:"center",
-      padding:30
-    }}>
-
-      <Text style={{
-        color:"#fff",
-        fontSize:22,
-        fontWeight:"bold",
-        marginBottom:20,
-        textAlign:"center"
-      }}>
-        GPS SEM PACI�`NCIA
-      </Text>
-
-      <Text style={{
-        color:"#ccc",
-        fontSize:16,
-        textAlign:"center",
-        marginBottom:30
-      }}>
-        Este aplicativo possui modo de humor ácido e linguagem ofensiva.
-        Ao continuar você aceita ouvir xingamentos e conteúdo adulto
-        durante a navegação.
-      </Text>
-
-      <TouchableOpacity
-        style={{
-          backgroundColor:"#00C853",
-          padding:15,
-          borderRadius:12,
-          width:"100%",
-          alignItems:"center",
-          marginBottom:15
-        }}
-        onPress={()=>setAceitouTermo(true)}
-      >
-        <Text style={{color:"#fff",fontSize:18,fontWeight:"bold"}}>
-          ACEITAR E ENTRAR
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={{
-          backgroundColor:"#d50000",
-          padding:15,
-          borderRadius:12,
-          width:"100%",
-          alignItems:"center"
-        }}
-        onPress={()=>BackHandler.exitApp()}
-      >
-        <Text style={{color:"#fff",fontSize:16,fontWeight:"bold"}}>
-          RECUSAR E SAIR
-        </Text>
-      </TouchableOpacity>
-
-    </View>
-  )
-}
-
 return (
 <GestureHandlerRootView style={{ flex: 1 }}>
 <BottomSheetModalProvider>
@@ -8173,8 +9679,8 @@ return;
 }}
 ref={mapRef}
   style={StyleSheet.absoluteFillObject}
-  mapType={modoNoturno ? "standard" : "mutedStandard"}
-  provider="google"
+  mapType="standard"
+  provider={forcarProviderPadrao ? undefined : "google"}
   showsBuildings={true}
   showsIndoors={false}
   showsTraffic={false}
@@ -8187,6 +9693,23 @@ ref={mapRef}
   zoomEnabled={true}
   pitchEnabled={true}
   rotateEnabled={true}
+  onMapReady={() => {
+    mapaBaseCarregadoRef.current = false;
+    if (fallbackProviderTimerRef.current) {
+      clearTimeout(fallbackProviderTimerRef.current);
+    }
+    fallbackProviderTimerRef.current = setTimeout(() => {
+      if (!mapaBaseCarregadoRef.current) {
+        setForcarProviderPadrao(true);
+      }
+    }, 4200);
+  }}
+  onMapLoaded={() => {
+    mapaBaseCarregadoRef.current = true;
+    if (fallbackProviderTimerRef.current) {
+      clearTimeout(fallbackProviderTimerRef.current);
+    }
+  }}
   onPanDrag={()=>{
   if(navegando){
     console.log("MAPA MOVIDO USUARIO");
@@ -8433,20 +9956,20 @@ mapMovidoRef.current = true;
   const ofertaParaUsuario = isPremiumAtual ? o : dadosOfertaParaUsuario(o);
   setOfertaSelecionada(ofertaParaUsuario);
 
-  if(!isPremiumAtual){
-    // Free abre apenas card bloqueado com valor + CTA Pro.
+  if(!isPremiumAtual && String(o?.tipo || "") !== "carona_oferecida"){
     setMenuOfertasVisivel(false);
     setAbaAtiva(null);
+    abrirTelaProSeNecessario();
     return;
   }
 
-  // PREMIUM abre opções da oferta mesmo em navegação
+  // Premium ou FREE em carona_oferecida abre opcoes da oferta.
   setMenuOfertasVisivel(true);
   setAbaOfertas("procurar");
   setAbaAtiva(null);
 
   // mostra rota da oferta no mapa
-  if(isPremiumAtual){
+  if(isPremiumAtual || String(o?.tipo || "") === "carona_oferecida"){
     buscarRotaORS(
       {
         lat: o.origem.lat,
@@ -8720,14 +10243,14 @@ mapMovidoRef.current = true;
         const ofertaParaUsuario = isPremiumAtual ? oferta : dadosOfertaParaUsuario(oferta);
         setOfertaSelecionada(ofertaParaUsuario);
 
-        if(!isPremiumAtual){
-          // Free abre apenas card bloqueado com valor + CTA Pro.
+        if(!isPremiumAtual && String(oferta?.tipo || "") !== "carona_oferecida"){
           setMenuOfertasVisivel(false);
           setAbaAtiva(null);
+          abrirTelaProSeNecessario();
           return;
         }
 
-        // PREMIUM abre a tela/overlay de ofertas mesmo durante navegação
+        // Premium ou FREE em carona_oferecida abre a tela/overlay de ofertas.
         setMenuOfertasVisivel(true);
         setAbaOfertas("procurar");
         setAbaAtiva(null);
@@ -8829,6 +10352,11 @@ mapMovidoRef.current = true;
   aceitarSolicitacaoChat={aceitarSolicitacaoChat}
   recusarSolicitacaoChat={recusarSolicitacaoChat}
   openProfile={openProfile}
+  onReportMessage={denunciarNoChat}
+  onBlockUser={bloquearUsuarioChat}
+  onUnblockUser={desbloquearUsuarioChat}
+  onModerateMessage={moderarMensagemChat}
+  chatBlockMeta={chatBloqueioManual}
 />
 
 {/* ===============================
@@ -9221,7 +10749,10 @@ fontWeight:"bold"
 {/* BOTÒO */}
 {!menuOfertasVisivel && (
 <TouchableOpacity
-onPress={()=>setMenuOfertasVisivel(true)}
+onPress={()=>{
+  if(!exigirLoginParaAcao("Faca login para acessar caronas, entregas e reservas.")) return;
+  setMenuOfertasVisivel(true);
+}}
 style={{
 position:"absolute",
 left:50,
@@ -9296,7 +10827,7 @@ Ofertas
 {/* ===============================
    TELA COMPLETA DE OFERTA
 ================================ */}
-{menuOfertasVisivel && (
+{usuarioAutenticado && menuOfertasVisivel && (
 
 <View
 style={{
@@ -9313,7 +10844,7 @@ elevation:50
 
 <OfertasScreen
   menuOfertasVisivel={menuOfertasVisivel}
-  ofertas={ofertas}
+  ofertas={ofertasVisiveisUsuario}
   usuarioId={usuarioId}
   setOfertaSelecionada={setOfertaSelecionada}
   setMenuOfertasVisivel={setMenuOfertasVisivel}
@@ -9790,7 +11321,7 @@ onPress={async()=>{
  try{
 
  const resp = await fetch(
-  `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(inputEnderecoCasa)}&countrycodes=br&limit=1`,
+  `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(inputEnderecoCasa)}&limit=1`,
   {
     headers:{
       "User-Agent":"gps-clean-app"
@@ -9799,6 +11330,9 @@ onPress={async()=>{
 );
 
   const data = await resp.json();
+  console.log("[GEOCODE_QUERY]", String(inputEnderecoCasa || "").trim());
+  console.log("[GEOCODE_URL]", `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(inputEnderecoCasa)}&limit=1`);
+  console.log("[GEOCODE_RESULT]", Array.isArray(data) ? data[0] : null);
 
 if(!data.length){
   alert(t("enderecoNaoEncontrado"));
@@ -9812,7 +11346,7 @@ const loc = {
 
   const novaCasa = {
     apelido: apelidoCasaTemp,
-  endereco: `${rua}, ${numero} - ${bairro}, ${cidade}, Brasil`,
+  endereco: `${rua}, ${numero} - ${bairro}, ${cidade}`,
     lat: loc.lat,
     lng: loc.lng
   };
@@ -9957,13 +11491,13 @@ onPress={async ()=>{
    return;
  }
 
- const enderecoFinal = `${rua}, ${numero}, ${bairro}, ${cidade}, Brasil`;
+ const enderecoFinal = `${rua}, ${numero}, ${bairro}, ${cidade}`;
 
 
  try{
 
  const resp = await fetch(
-  `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&countrycodes=br&limit=1`,
+  `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&limit=1`,
   {
     headers:{
       "User-Agent":"gps-clean-app"
@@ -9972,6 +11506,9 @@ onPress={async ()=>{
 );
 
 const data = await resp.json();
+console.log("[GEOCODE_QUERY]", String(enderecoFinal || "").trim());
+console.log("[GEOCODE_URL]", `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&limit=1`);
+console.log("[GEOCODE_RESULT]", Array.isArray(data) ? data[0] : null);
 
 if(!Array.isArray(data) || !data.length){
   alert(t("enderecoNaoEncontrado"));
@@ -10181,12 +11718,12 @@ onPress={async()=>{
  }
 
  const enderecoFinal =
- `${rua}, ${numero} - ${bairro}, ${cidade}, Brasil`;
+ `${rua}, ${numero} - ${bairro}, ${cidade}`;
 
  try{
 
  const resp = await fetch(
-  `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&countrycodes=br&limit=1`,
+  `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&limit=1`,
   {
     headers:{
       "User-Agent":"gps-clean-app"
@@ -10195,6 +11732,9 @@ onPress={async()=>{
 );
 
  const data = await resp.json();
+ console.log("[GEOCODE_QUERY]", String(enderecoFinal || "").trim());
+ console.log("[GEOCODE_URL]", `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&limit=1`);
+ console.log("[GEOCODE_RESULT]", Array.isArray(data) ? data[0] : null);
 
 if(!Array.isArray(data) || !data.length){
   alert(tComFallback("enderecoNaoEncontrado", "Endereço não encontrado"));
@@ -10419,11 +11959,11 @@ onPress={async()=>{
     return;
   }
 
-  const enderecoFinal = `${rua}, ${numero} - ${bairro}, ${cidade}, Brasil`;
+  const enderecoFinal = `${rua}, ${numero} - ${bairro}, ${cidade}`;
 
   try{
     const resp = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&countrycodes=br&limit=1`,
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&limit=1`,
       {
         headers:{
           "User-Agent":"gps-clean-app"
@@ -10432,6 +11972,9 @@ onPress={async()=>{
     );
 
     const data = await resp.json();
+  console.log("[GEOCODE_QUERY]", String(enderecoFinal || "").trim());
+  console.log("[GEOCODE_URL]", `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&limit=1`);
+  console.log("[GEOCODE_RESULT]", Array.isArray(data) ? data[0] : null);
 
     if(!Array.isArray(data) || !data.length){
       alert(tComFallback("enderecoNaoEncontrado", "Endereço não encontrado"));
@@ -10641,11 +12184,11 @@ onPress={async()=>{
     return;
   }
 
-  const enderecoFinal = `${rua}, ${numero} - ${bairro}, ${cidade}, Brasil`;
+  const enderecoFinal = `${rua}, ${numero} - ${bairro}, ${cidade}`;
 
   try{
     const resp = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&countrycodes=br&limit=1`,
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&limit=1`,
       {
         headers:{
           "User-Agent":"gps-clean-app"
@@ -10654,6 +12197,9 @@ onPress={async()=>{
     );
 
     const data = await resp.json();
+  console.log("[GEOCODE_QUERY]", String(enderecoFinal || "").trim());
+  console.log("[GEOCODE_URL]", `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(enderecoFinal)}&limit=1`);
+  console.log("[GEOCODE_RESULT]", Array.isArray(data) ? data[0] : null);
 
     if(!Array.isArray(data) || !data.length){
       alert(tComFallback("enderecoNaoEncontrado", "Endereço não encontrado"));
@@ -11561,7 +13107,7 @@ if(barraTimer.current){
   return (
     <View style={{ gap: 16, marginBottom: 24 }}>
 
-      {/* PREMIUM FREE — somente para motoristas, válido nos dois primeiros meses de lançamento */}
+      {/* PREMIUM FREE — somente para motoristas, válido nos primeiros 75 dias de lançamento */}
       {(premiumFreeDisp || premiumFreeAtivo) && (
         <View
           style={{
@@ -11598,7 +13144,7 @@ if(barraTimer.current){
             marginBottom:12,
             fontStyle:"italic"
           }}>
-            🚗 {tComFallback("premiumFreeSubtitulo", "Grátis nos dois primeiros meses de lançamento")}
+            🚗 {tComFallback("premiumFreeSubtitulo", "Grátis nos primeiros 75 dias de lançamento")}
           </Text>
 
           <Text style={{
@@ -11669,7 +13215,7 @@ if(barraTimer.current){
                   setTelaProVisivel(false);
                   Alert.alert(
                     tComFallback("premiumFreeAtivadoTitulo", "Premium Free ativado!"),
-                    tComFallback("premiumFreeAtivadoMsg", "Você pode dar caronas e fazer entregas gratuitamente até o fim dos dois primeiros meses de lançamento.")
+                    tComFallback("premiumFreeAtivadoMsg", "Você pode dar caronas e fazer entregas gratuitamente até o fim dos primeiros 75 dias de lançamento.")
                   );
                 } catch (e) {
                   console.log("[premium_free] Erro ao ativar:", e);
@@ -12028,6 +13574,30 @@ style={{
     <MaterialCommunityIcons name="menu" size={24} color="#fff" />
   </TouchableOpacity>
 )}
+{!usuarioAutenticado && !menuAberto && (
+  <TouchableOpacity
+    onPress={() => {
+      setAuthModoCadastro(true);
+      abrirTelaLogin("Crie sua conta para usar caronas, entregas, chat e reservas.");
+    }}
+    style={{
+      position: "absolute",
+      top: 96,
+      right: 20,
+      backgroundColor: "rgba(22,163,74,0.94)",
+      borderWidth: 1,
+      borderColor: "#86efac",
+      paddingVertical: 7,
+      paddingHorizontal: 10,
+      borderRadius: 10,
+      zIndex: 999,
+      justifyContent: "center",
+      alignItems: "center"
+    }}
+  >
+    <Text style={{ color: "#f0fdf4", fontWeight: "800", fontSize: 12 }}>Entrar / Criar</Text>
+  </TouchableOpacity>
+)}
 <SettingsPanel
   visivel={menuAberto}
   fechar={() => setMenuAberto(false)}
@@ -12326,6 +13896,252 @@ Cancelar
 </View>
 )}
 
+{authModalVisivel && (
+  <View style={{
+    position:"absolute",
+    top:0,
+    left:0,
+    right:0,
+    bottom:0,
+    backgroundColor:"rgba(0,0,0,0.9)",
+    justifyContent:"center",
+    alignItems:"center",
+    zIndex:13000,
+    paddingHorizontal:16
+  }}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ width:"100%", flex:1, justifyContent:"center", alignItems:"center" }}
+    >
+    <View style={{
+      width:"100%",
+      maxWidth:420,
+      maxHeight:"88%",
+      backgroundColor:"#0f172a",
+      borderRadius:18,
+      borderWidth:1,
+      borderColor:"#334155",
+      padding:16
+    }}>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 24 }}
+      >
+      <Text style={{ color:"#fff", fontSize:20, fontWeight:"800", marginBottom:8, textAlign:"center" }}>
+        {authModoCadastro ? "Criar conta" : "Entrar"}
+      </Text>
+
+      {!!authMotivoBloqueio && (
+        <Text style={{ color:"#cbd5e1", fontSize:13, textAlign:"center", marginBottom:12 }}>
+          {authMotivoBloqueio}
+        </Text>
+      )}
+
+      {authCarregando ? (
+        <Text style={{ color:"#93c5fd", textAlign:"center", marginBottom:10 }}>
+          Verificando sessao...
+        </Text>
+      ) : (
+        <>
+          {authModoCadastro && (
+            <TextInput
+              value={authNome}
+              onChangeText={setAuthNome}
+              placeholder="Nome"
+              placeholderTextColor="#94a3b8"
+              style={{
+                backgroundColor:"#111827",
+                color:"#fff",
+                borderRadius:10,
+                borderWidth:1,
+                borderColor:"#334155",
+                paddingHorizontal:12,
+                paddingVertical:10,
+                marginBottom:10
+              }}
+            />
+          )}
+
+          <TextInput
+            value={authEmail}
+            onChangeText={setAuthEmail}
+            placeholder="E-mail"
+            placeholderTextColor="#94a3b8"
+            autoCapitalize="none"
+            keyboardType="email-address"
+            style={{
+              backgroundColor:"#111827",
+              color:"#fff",
+              borderRadius:10,
+              borderWidth:1,
+              borderColor:"#334155",
+              paddingHorizontal:12,
+              paddingVertical:10,
+              marginBottom:10
+            }}
+          />
+
+          {authModoCadastro && (
+            <TextInput
+              value={authEmailConfirmacao}
+              onChangeText={setAuthEmailConfirmacao}
+              placeholder="Confirmar e-mail"
+              placeholderTextColor="#94a3b8"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={{
+                backgroundColor:"#111827",
+                color:"#fff",
+                borderRadius:10,
+                borderWidth:1,
+                borderColor:"#334155",
+                paddingHorizontal:12,
+                paddingVertical:10,
+                marginBottom:10
+              }}
+            />
+          )}
+
+          <View
+            style={{
+              backgroundColor:"#111827",
+              borderRadius:10,
+              borderWidth:1,
+              borderColor:"#334155",
+              paddingHorizontal:10,
+              paddingVertical:2,
+              marginBottom:10
+            }}
+          >
+            <View style={{ flexDirection:"row", alignItems:"center" }}>
+              <TextInput
+                value={authSenha}
+                onChangeText={setAuthSenha}
+                placeholder="Senha"
+                placeholderTextColor="#94a3b8"
+                secureTextEntry={!authSenhaVisivel}
+                style={{
+                  flex:1,
+                  color:"#fff",
+                  paddingHorizontal:2,
+                  paddingVertical:8
+                }}
+              />
+              <TouchableOpacity
+                onPress={()=>setAuthSenhaVisivel((prev)=>!prev)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{ paddingHorizontal:4, paddingVertical:6 }}
+              >
+                <MaterialCommunityIcons name={authSenhaVisivel ? "eye-off" : "eye"} size={19} color="#cbd5e1" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {authModoCadastro && (
+            <View
+              style={{
+                backgroundColor:"#111827",
+                borderRadius:10,
+                borderWidth:1,
+                borderColor:"#334155",
+                paddingHorizontal:10,
+                paddingVertical:2,
+                marginBottom:10
+              }}
+            >
+              <View style={{ flexDirection:"row", alignItems:"center" }}>
+                <TextInput
+                  value={authSenhaConfirmacao}
+                  onChangeText={setAuthSenhaConfirmacao}
+                  placeholder="Confirmar senha"
+                  placeholderTextColor="#94a3b8"
+                  secureTextEntry={!authSenhaConfirmacaoVisivel}
+                  style={{
+                    flex:1,
+                    color:"#fff",
+                    paddingHorizontal:2,
+                    paddingVertical:8
+                  }}
+                />
+                <TouchableOpacity
+                  onPress={()=>setAuthSenhaConfirmacaoVisivel((prev)=>!prev)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ paddingHorizontal:4, paddingVertical:6 }}
+                >
+                  <MaterialCommunityIcons name={authSenhaConfirmacaoVisivel ? "eye-off" : "eye"} size={19} color="#cbd5e1" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {!!authErro && (
+            <Text style={{ color:"#fda4af", marginBottom:10, textAlign:"center" }}>{authErro}</Text>
+          )}
+
+          <TouchableOpacity
+            onPress={authModoCadastro ? cadastrarComEmailSenha : entrarComEmailSenha}
+            disabled={authProcessando}
+            style={{
+              backgroundColor:"#22c55e",
+              borderRadius:10,
+              paddingVertical:12,
+              alignItems:"center",
+              marginBottom:8,
+              opacity: authProcessando ? 0.7 : 1
+            }}
+          >
+            <Text style={{ color:"#022c22", fontWeight:"800" }}>
+              {authProcessando ? "Aguarde..." : (authModoCadastro ? "CRIAR CONTA" : "ENTRAR")}
+            </Text>
+          </TouchableOpacity>
+
+          {googleLoginDisponivel && (
+            <TouchableOpacity
+              onPress={entrarComGoogle}
+              style={{
+                backgroundColor:"#fff",
+                borderRadius:10,
+                paddingVertical:11,
+                alignItems:"center",
+                marginBottom:8
+              }}
+            >
+              <Text style={{ color:"#111", fontWeight:"700" }}>ENTRAR COM GOOGLE</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            onPress={()=>{
+              setAuthModoCadastro((prev)=>!prev);
+              setAuthErro("");
+              setAuthSenhaVisivel(false);
+              setAuthSenhaConfirmacaoVisivel(false);
+            }}
+            style={{ marginBottom:8 }}
+          >
+            <Text style={{ color:"#7dd3fc", textAlign:"center", fontWeight:"600" }}>
+              {authModoCadastro ? "Ja tenho conta" : "Criar conta nova"}
+            </Text>
+          </TouchableOpacity>
+
+          {usuarioAutenticado && (
+            <TouchableOpacity onPress={sairContaAuth} style={{ marginBottom:8 }}>
+              <Text style={{ color:"#fca5a5", textAlign:"center", fontWeight:"600" }}>Sair da conta atual</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity onPress={()=>setAuthModalVisivel(false)}>
+            <Text style={{ color:"#94a3b8", textAlign:"center" }}>Fechar</Text>
+          </TouchableOpacity>
+        </>
+      )}
+      </ScrollView>
+    </View>
+    </KeyboardAvoidingView>
+  </View>
+)}
+
 {denunciaOfertaAtual && (
   <View style={{
     position:"absolute",
@@ -12412,13 +14228,13 @@ Cancelar
 )}
 
 {/* TELAS DAS ABAS */}
-{abaAtiva === 'procurar' && (
+{usuarioAutenticado && abaAtiva === 'procurar' && (
   <View style={{
     flex: 1,
     backgroundColor: '#000'
   }}>
    <ProcurarScreen
-ofertas={ofertas}
+ofertas={ofertasVisiveisUsuario}
 usuarioId={usuarioId}
 isPro={usuarioEhPremiumAtual()}
 setOfertaSelecionada={setOfertaSelecionada}
@@ -12433,7 +14249,7 @@ onRequestPro={abrirTelaProSeNecessario}
 />
   </View>
 )}
-{abaAtiva === 'oferecer' && (
+{usuarioAutenticado && abaAtiva === 'oferecer' && (
   <View style={{
     flex: 1,
     backgroundColor: '#000'
@@ -12445,7 +14261,7 @@ onRequestPro={abrirTelaProSeNecessario}
       setMenuOfertasVisivel={() => setAbaAtiva(null)}
       setAbaOfertas={setAbaOfertas}
       abaOfertas={abaOfertas}
-      ofertas={ofertas}
+      ofertas={ofertasVisiveisUsuario}
       buscarCoordenadas={buscarCoordenadas}
       criarOfertaNova={criarOfertaNova}
       atualizarOfertaExistente={atualizarOfertaExistente}
@@ -12470,26 +14286,26 @@ onRequestPro={abrirTelaProSeNecessario}
 )}
   </View>
 )}
-{abaAtiva === 'viagens' && (
+{usuarioAutenticado && abaAtiva === 'viagens' && (
   <View style={{
     flex: 1,
     backgroundColor: '#000'
   }}>
     <ViagensScreen
-      ofertas={ofertas}
+      ofertas={ofertasVisiveisUsuario}
       usuarioId={usuarioId}
       textos={textos}
     />
   </View>
 )}
-{abaAtiva === 'mensagens' && (
+{usuarioAutenticado && abaAtiva === 'mensagens' && (
   <View style={{
     flex: 1,
     backgroundColor: '#000'
   }}>
     <MensagensScreen
       usuarioId={usuarioId}
-      ofertas={ofertas}
+      ofertas={ofertasVisiveisUsuario}
       conversas={conversas as any[]}
       textos={textos}
       setChatOferta={setChatOferta}
@@ -12499,7 +14315,7 @@ onRequestPro={abrirTelaProSeNecessario}
     />
   </View>
 )}
-{abaAtiva === 'perfil' && (
+{usuarioAutenticado && abaAtiva === 'perfil' && (
   <View style={{
     flex: 1,
     backgroundColor: '#000'
