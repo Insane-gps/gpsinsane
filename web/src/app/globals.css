@@ -646,6 +646,19 @@ button:hover,
     url("/fundos/entrega.jpeg");
 }
 
+.inboxPage.inboxRideContext {
+  background-image:
+    linear-gradient(160deg, rgba(4, 11, 24, 0.76), rgba(3, 10, 20, 0.86)),
+    url("/fundos/carona.jpeg");
+}
+
+.inboxPage.inboxRideContext .inboxRow,
+.inboxPage.inboxRideContext .chatPanel {
+  background-image:
+    linear-gradient(155deg, rgba(9, 18, 35, 0.9), rgba(10, 19, 37, 0.8)),
+    url("/fundos/carona.jpeg");
+}
+
 .profilePage .vehicleBuilder,
 .profilePage .tripCard {
   background-image:

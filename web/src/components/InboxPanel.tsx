@@ -75,8 +75,14 @@ export function InboxPanel() {
     );
   }
 
+  const inboxContextClass = ativa?.tipo === "entrega"
+    ? "inboxDeliveryContext"
+    : ativa?.tipo
+      ? "inboxRideContext"
+      : "";
+
   return (
-    <section className={`sectionPane neoPane inboxPage ${ativa?.tipo === "entrega" ? "inboxDeliveryContext" : ""}`}>
+    <section className={`sectionPane neoPane inboxPage ${inboxContextClass}`}>
       <header className="sectionHead">
         <h1>{t.inboxTitle}</h1>
         <p className="muted">{t.inboxSubtitle}</p>
