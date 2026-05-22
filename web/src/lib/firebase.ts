@@ -1,6 +1,6 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, setLogLevel } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -31,6 +31,10 @@ if (typeof window !== "undefined" && missing.length > 0) {
 }
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfigSeguro);
+
+if (typeof window !== "undefined") {
+  setLogLevel("silent");
+}
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);

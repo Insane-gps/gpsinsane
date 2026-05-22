@@ -464,13 +464,13 @@ export default function OferecerPage() {
   if (loading) return <section className="sectionPane">{t.loadingSession}</section>;
 
   return (
-    <section className="sectionPane neoPane">
+    <section className="sectionPane neoPane offerPage">
       <h1>{t.oferecer}</h1>
-      <p className="muted">Mesma proposta da aba oferecer do mobile, agora no web.</p>
+      <p className="muted">{t.offerPageSubtitle}</p>
 
       {!user && (
         <p className="noticeLine">
-          Faca login para publicar. O formulario permanece visivel para voce revisar todos os campos da aba oferecer.
+          Faca login para publicar. O formulario permanece visivel para voce revisar todos os campos da aba ofertar.
         </p>
       )}
 
@@ -492,7 +492,7 @@ export default function OferecerPage() {
               setShowPlanCards(false);
             }}
           >
-            Oferecer carona {!premiumPodeCriarOferta(plano) ? "- PREMIUM" : ""}
+            Ofertar carona {!premiumPodeCriarOferta(plano) ? "- PREMIUM" : ""}
           </button>
           <button type="button" className={`typeBtn ${tipo === "entrega" ? "active orange" : ""}`} onClick={() => setTipo("entrega")}>Solicitar entrega</button>
         </div>

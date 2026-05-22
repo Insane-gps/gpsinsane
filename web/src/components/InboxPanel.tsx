@@ -61,11 +61,11 @@ export function InboxPanel() {
     });
   }, [ofertas, user, conversasOcultasMeta]);
 
-  if (loading) return <section className="sectionPane">{t.loadingSession}</section>;
+  if (loading) return <section className="sectionPane neoPane inboxPage">{t.loadingSession}</section>;
 
   if (!user) {
     return (
-      <section className="sectionPane neoPane">
+      <section className="sectionPane neoPane inboxPage">
         <h1>{t.inboxTitle}</h1>
         <p className="muted">Faca login para abrir suas conversas.</p>
         <Link href="/login" className="btnPrimary" style={{ display: "inline-flex", width: "fit-content" }}>
@@ -76,10 +76,10 @@ export function InboxPanel() {
   }
 
   return (
-    <section className="sectionPane neoPane inboxPage">
+    <section className={`sectionPane neoPane inboxPage ${ativa?.tipo === "entrega" ? "inboxDeliveryContext" : ""}`}>
       <header className="sectionHead">
         <h1>{t.inboxTitle}</h1>
-        <p className="muted">Central de conversa das suas ofertas e reservas.</p>
+        <p className="muted">{t.inboxSubtitle}</p>
       </header>
 
       <div className="offersLayout">

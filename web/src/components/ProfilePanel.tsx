@@ -89,11 +89,11 @@ export function ProfilePanel() {
     }));
   }
 
-  if (loading) return <section className="sectionPane">{t.loadingSession}</section>;
+  if (loading) return <section className="sectionPane neoPane profilePage">{t.loadingSession}</section>;
 
   if (!user) {
     return (
-      <section className="sectionPane neoPane">
+      <section className="sectionPane neoPane profilePage">
         <h1>{t.profileTitle}</h1>
         <p className="muted">Faca login para editar seu perfil.</p>
         <Link href="/login" className="btnPrimary" style={{ display: "inline-flex", width: "fit-content" }}>
@@ -104,7 +104,7 @@ export function ProfilePanel() {
   }
 
   return (
-    <section className="sectionPane neoPane">
+    <section className="sectionPane neoPane profilePage">
       <h1>{t.profileTitle}</h1>
       <p className="muted">{t.profileSubtitle}</p>
 
@@ -127,7 +127,7 @@ export function ProfilePanel() {
         </label>
 
         <div className="vehicleBuilder">
-          <h3>Veiculos</h3>
+          <h3>{t.profileVehiclesTitle}</h3>
           <div className="vehicleGrid">
             <select value={tipo} onChange={(e) => setTipo(e.target.value as Vehicle["tipo"])}>
               <option value="carro">Carro</option>
@@ -140,14 +140,14 @@ export function ProfilePanel() {
             <input placeholder="Cor" value={cor} onChange={(e) => setCor(e.target.value)} />
             <input placeholder="Placa" value={placa} onChange={(e) => setPlaca(e.target.value)} />
           </div>
-          <button className="btnSecondary" type="button" onClick={addVehicle}>Adicionar veiculo</button>
+          <button className="btnSecondary" type="button" onClick={addVehicle}>{t.profileAddVehicle}</button>
 
           <div className="tripGrid">
             {profile.veiculos.map((item, index) => (
               <article key={`${item.placa}-${index}`} className="tripCard">
                 <header>
                   <strong>{item.marca} {item.modelo}</strong>
-                  <button className="ghost" type="button" onClick={() => removeVehicle(index)}>Remover</button>
+                  <button className="ghost" type="button" onClick={() => removeVehicle(index)}>{t.profileRemoveVehicle}</button>
                 </header>
                 <p><strong>Tipo:</strong> {item.tipo}</p>
                 <p><strong>Ano:</strong> {item.ano || "-"}</p>
@@ -158,8 +158,8 @@ export function ProfilePanel() {
           </div>
         </div>
 
-        {msg && <p className="noticeLine">{msg}</p>}
-        <button className="btnPrimary" type="submit">Salvar perfil</button>
+        {msg && <p className="noticeLine">{msg || t.profileStoredLocal}</p>}
+        <button className="btnPrimary" type="submit">{t.profileSave}</button>
       </form>
     </section>
   );

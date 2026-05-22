@@ -8,7 +8,13 @@ import { db } from "@/lib/firebase";
 import { carregarPlanoUsuario, premiumPodeCriarOferta } from "@/lib/plan";
 import type { Oferta, ReservaOferta, TipoOferta } from "@/lib/types";
 import { collection, doc, onSnapshot, orderBy, query, runTransaction } from "firebase/firestore";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+
+const MapaOfertas = dynamic(() => import("@/components/MapaOfertas").then((mod) => mod.MapaOfertas), {
+  ssr: false,
+  loading: () => <section className="mapShell neoPane mapLoading">Carregando mapa...</section>,
+});
 
 type MarketplacePanelProps = {
   filtroTipo?: TipoOferta | null;
@@ -19,6 +25,7 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
   const { user, loading } = useAuth();
   const [ofertas, setOfertas] = useState<Oferta[]>([]);
   const [chatOferta, setChatOferta] = useState<Oferta | null>(null);
+  const [ofertaSelecionadaId, setOfertaSelecionadaId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
   const [busca, setBusca] = useState("");
   const [planoAtual, setPlanoAtual] = useState<"free" | "pro" | "premium" | "premium_free">("free");
@@ -73,6 +80,36 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
     });
   }, [ofertas, filtroTipo, busca, planoAtual]);
 
+  const ofertaSelecionada = useMemo(() => {
+    return ofertasFiltradas.find((oferta) => oferta.id === ofertaSelecionadaId) || null;
+  }, [ofertasFiltradas, ofertaSelecionadaId]);
+
+  const centroInicialMapa = useMemo(() => {
+    const alvo = ofertasFiltradas.find((oferta) => Number.isFinite(oferta.origem?.lat) && Number.isFinite(oferta.origem?.lng))
+      || ofertasFiltradas.find((oferta) => Number.isFinite(oferta.destino?.lat) && Number.isFinite(oferta.destino?.lng));
+
+    if (alvo?.origem && Number.isFinite(alvo.origem.lat) && Number.isFinite(alvo.origem.lng)) {
+      return [alvo.origem.lat, alvo.origem.lng] as [number, number];
+    }
+
+    if (alvo?.destino && Number.isFinite(alvo.destino.lat) && Number.isFinite(alvo.destino.lng)) {
+      return [alvo.destino.lat, alvo.destino.lng] as [number, number];
+    }
+
+    return [-26.9042, -48.6556] as [number, number];
+  }, [ofertasFiltradas]);
+
+  useEffect(() => {
+    if (ofertasFiltradas.length === 0) {
+      setOfertaSelecionadaId(null);
+      return;
+    }
+
+    if (!ofertasFiltradas.some((oferta) => oferta.id === ofertaSelecionadaId)) {
+      setOfertaSelecionadaId(ofertasFiltradas[0].id);
+    }
+  }, [ofertasFiltradas, ofertaSelecionadaId]);
+
   async function reservar(oferta: Oferta) {
     if (!user) {
       setMsg(t.loginToReserve);
@@ -126,45 +163,58 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
   if (loading) return <section className="sectionPane">{t.loadingSession}</section>;
 
   return (
-    <section className="sectionPane neoPane offersPage">
+    <section className="sectionPane neoPane marketplacePage">
       <header className="sectionHead sectionHeadWide">
         <div>
           <p className="kicker">{t.procurar}</p>
           <h1>{t.offersTitle}</h1>
-          <p className="muted">{t.offersSubtitle}</p>
+          <p className="muted">{t.offerPageSubtitle}</p>
         </div>
         <input
           className="searchInput"
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar por rota, descricao ou criador"
+          placeholder={t.searchPlaceholder}
         />
       </header>
 
       {msg && <p className="noticeLine">{msg}</p>}
 
-      <div className="offersLayout">
-        <div className="offersGrid">
-          {ofertasFiltradas.map((oferta) => (
-            <OfferCard
-              key={oferta.id}
-              oferta={oferta}
-              onReservar={solicitarReserva}
-              onAbrirChat={setChatOferta}
-            />
-          ))}
-
-          {ofertasFiltradas.length === 0 && (
-            <p className="muted">{t.noOffers}</p>
-          )}
-        </div>
-
-        <ChatBox
-          oferta={chatOferta}
-          usuarioId={user?.uid || ""}
-          usuarioNome={user?.displayName || user?.email || user?.uid || "anon"}
-          onConversationDeleted={() => setChatOferta(null)}
+      <div className="marketplaceLayout">
+        <MapaOfertas
+          ofertas={ofertasFiltradas}
+          ofertaSelecionadaId={ofertaSelecionadaId}
+          onSelecionarOferta={(oferta) => {
+            setOfertaSelecionadaId(oferta.id);
+          }}
+          centroInicial={centroInicialMapa}
         />
+
+        <div className="marketplaceSide">
+          <div className="offersGrid marketplaceList">
+            {ofertasFiltradas.map((oferta) => (
+              <OfferCard
+                key={oferta.id}
+                oferta={oferta}
+                selected={ofertaSelecionada?.id === oferta.id}
+                onSelecionar={(item) => setOfertaSelecionadaId(item.id)}
+                onReservar={solicitarReserva}
+                onAbrirChat={setChatOferta}
+              />
+            ))}
+
+            {ofertasFiltradas.length === 0 && (
+              <p className="muted">{t.noOffers}</p>
+            )}
+          </div>
+
+          <ChatBox
+            oferta={chatOferta}
+            usuarioId={user?.uid || ""}
+            usuarioNome={user?.displayName || user?.email || user?.uid || "anon"}
+            onConversationDeleted={() => setChatOferta(null)}
+          />
+        </div>
       </div>
     </section>
   );

@@ -136,7 +136,7 @@ export function ChatBox({ oferta, usuarioId, usuarioNome, onConversationDeleted 
           onClick={() => void excluirConversaInteiraParaMim()}
           disabled={!usuarioId || deletandoConversa}
         >
-          {deletandoConversa ? "Excluindo..." : "Excluir conversa"}
+          {deletandoConversa ? t.chatDeleting : t.chatDeleteConversation}
         </button>
       </div>
       <p className="muted">{oferta.nomeOuDescricao || oferta.id}</p>
@@ -173,7 +173,7 @@ export function ChatBox({ oferta, usuarioId, usuarioNome, onConversationDeleted 
         <input
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
-          placeholder={!usuarioId ? t.loginToChat : "Digite sua mensagem"}
+          placeholder={!usuarioId ? t.loginToChat : t.chatPlaceholder}
           maxLength={500}
           disabled={!usuarioId}
         />

@@ -32,11 +32,11 @@ export function TripsPanel() {
     });
   }, [ofertas, user]);
 
-  if (loading) return <section className="sectionPane">{t.loadingSession}</section>;
+  if (loading) return <section className="sectionPane neoPane tripsPage">{t.loadingSession}</section>;
 
   if (!user) {
     return (
-      <section className="sectionPane neoPane">
+      <section className="sectionPane neoPane tripsPage">
         <h1>{t.myTripsTitle}</h1>
         <p className="muted">Faca login para visualizar suas viagens.</p>
       </section>
@@ -44,9 +44,9 @@ export function TripsPanel() {
   }
 
   return (
-    <section className="sectionPane neoPane">
+    <section className="sectionPane neoPane tripsPage">
       <h1>{t.myTripsTitle}</h1>
-      <p className="muted">Historico de ofertas criadas e reservas ativas.</p>
+      <p className="muted">{t.tripsSubtitle}</p>
 
       <div className="tripGrid">
         {minhasViagens.map((item) => (

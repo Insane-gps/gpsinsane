@@ -1,5 +1,6 @@
 "use client";
 
+import { useWebI18n } from "@/components/WebI18nProvider";
 import Link from "next/link";
 
 type PremiumGuardProps = {
@@ -8,16 +9,17 @@ type PremiumGuardProps = {
 };
 
 export function PremiumGuard({ liberado, children }: PremiumGuardProps) {
+  const { t } = useWebI18n();
+
   if (liberado) return <>{children}</>;
 
   return (
     <section className="premiumPane">
-      <h2>Recurso Premium</h2>
+      <h2>{t.premiumLockTitle}</h2>
       <p>
-        Criar oferta publica de carona/entrega na web exige plano Premium ativo.
-        Sua conta pode continuar solicitando reservas normalmente no plano Free.
+        {t.premiumLockSubtitle}
       </p>
-      <Link href="/ofertas" className="btnSecondary">Voltar para ofertas</Link>
+      <Link href="/ofertas" className="btnSecondary">{t.premiumBackToOffers}</Link>
     </section>
   );
 }
