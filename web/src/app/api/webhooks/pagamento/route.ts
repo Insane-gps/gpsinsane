@@ -11,6 +11,10 @@ type WebhookPayload = {
   };
 };
 
+function planoToValorEsperado(plano: "pro" | "premium"): number {
+  return plano === "premium" ? 49.9 : 9.9;
+}
+
 function isPagamentoEvento(payload: WebhookPayload): boolean {
   const type = String(payload?.type || payload?.topic || "").toLowerCase();
   return type.includes("payment") || type.includes("pagamento");
@@ -63,6 +67,30 @@ export async function POST(request: Request) {
     }
 
     const db = getAdminDb();
+    const pagamentoRef = db.collection("pagamentos_web").doc(external.pagamentoRefId);
+    const pagamentoDoc = await pagamentoRef.get();
+    const pagamentoData = pagamentoDoc.exists ? (pagamentoDoc.data() as Record<string, unknown>) : null;
+
+    if (!pagamentoData) {
+      return NextResponse.json({ ok: true, ignored: true, reason: "pagamento_referencia_nao_encontrado" });
+    }
+
+    if (String(pagamentoData.uid || "") !== external.uid || String(pagamentoData.plano || "") !== external.plano) {
+      return NextResponse.json({ ok: true, ignored: true, reason: "checkout_uid_plano_invalido" });
+    }
+
+    const valorEsperado = planoToValorEsperado(external.plano);
+    const valorPago = Number(pagamento?.transaction_amount || 0);
+    const moedaPagamento = String(pagamento?.currency_id || "").toUpperCase();
+
+    if (!Number.isFinite(valorPago) || valorPago + 1e-6 < valorEsperado) {
+      return NextResponse.json({ ok: true, ignored: true, reason: "valor_pago_invalido", valorPago, valorEsperado });
+    }
+
+    if (moedaPagamento && moedaPagamento !== "BRL") {
+      return NextResponse.json({ ok: true, ignored: true, reason: "moeda_pagamento_invalida", moedaPagamento });
+    }
+
     const usuarioRef = db.collection("usuarios").doc(external.uid);
 
     await usuarioRef.set(
@@ -72,26 +100,29 @@ export async function POST(request: Request) {
         assinaturaOrigem: "web",
         assinaturaStatus: "ativa",
         assinaturaAtualizadaEm: adminServerTimestamp(),
+        assinaturaProvider: "web_checkout",
+        assinaturaProductId: null,
+        assinaturaExpiraEm: null,
         pagamentoProvider: "mercado_pago",
         pagamentoId: paymentId,
       },
       { merge: true }
     );
 
-    await db
-      .collection("pagamentos_web")
-      .doc(external.pagamentoRefId)
-      .set(
-        {
-          status: "approved",
-          assinaturaAplicada: true,
-          paymentId,
-          planoAplicado: external.plano,
-          atualizadoEm: Date.now(),
-          assinaturaAtualizadaEm: adminServerTimestamp(),
-        },
-        { merge: true }
-      );
+    await pagamentoRef.set(
+      {
+        status: "approved",
+        assinaturaAplicada: true,
+        paymentId,
+        planoAplicado: external.plano,
+        valorPago,
+        valorEsperado,
+        moedaPagamento: moedaPagamento || null,
+        atualizadoEm: Date.now(),
+        assinaturaAtualizadaEm: adminServerTimestamp(),
+      },
+      { merge: true }
+    );
 
     return NextResponse.json({ ok: true });
   } catch (error) {
