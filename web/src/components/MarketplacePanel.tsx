@@ -62,11 +62,9 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
 
   const ofertasFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
-    const premiumAtivo = premiumPodeCriarOferta(planoAtual);
     return ofertas.filter((oferta) => {
       if (oferta.status !== "ativa") return false;
       if (filtroTipo && oferta.tipo !== filtroTipo) return false;
-      if (!premiumAtivo && oferta.tipo !== "carona_oferecida") return false;
       if (!termo) return true;
 
       const pool = [

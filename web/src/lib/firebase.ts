@@ -11,17 +11,26 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+const firebaseConfigPadrao = {
+  apiKey: "AIzaSyDQks8dGYuVubpPmKh7cfo9AWdfNZVaZfI",
+  authDomain: "gpsclean-91dec.firebaseapp.com",
+  projectId: "gpsclean-91dec",
+  storageBucket: "gpsclean-91dec.firebasestorage.app",
+  messagingSenderId: "331367909461",
+  appId: "1:331367909461:web:b6346d1d68d21c586aacdc",
+};
+
 const missing = Object.entries(firebaseConfig).filter(([, value]) => !value);
 
 const firebaseConfigSeguro = missing.length === 0
   ? firebaseConfig
   : {
-      apiKey: firebaseConfig.apiKey || "placeholder-api-key",
-      authDomain: firebaseConfig.authDomain || "placeholder.firebaseapp.com",
-      projectId: firebaseConfig.projectId || "placeholder-project",
-      storageBucket: firebaseConfig.storageBucket || "placeholder.appspot.com",
-      messagingSenderId: firebaseConfig.messagingSenderId || "000000000000",
-      appId: firebaseConfig.appId || "1:000000000000:web:placeholder",
+      apiKey: firebaseConfig.apiKey || firebaseConfigPadrao.apiKey,
+      authDomain: firebaseConfig.authDomain || firebaseConfigPadrao.authDomain,
+      projectId: firebaseConfig.projectId || firebaseConfigPadrao.projectId,
+      storageBucket: firebaseConfig.storageBucket || firebaseConfigPadrao.storageBucket,
+      messagingSenderId: firebaseConfig.messagingSenderId || firebaseConfigPadrao.messagingSenderId,
+      appId: firebaseConfig.appId || firebaseConfigPadrao.appId,
     };
 
 if (typeof window !== "undefined" && missing.length > 0) {
