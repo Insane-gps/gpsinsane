@@ -29,7 +29,7 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
   const [msg, setMsg] = useState("");
   const [busca, setBusca] = useState("");
   const [planoAtual, setPlanoAtual] = useState<"free" | "pro" | "premium" | "premium_free">("free");
-
+  const [reservaQtdPorOferta, setReservaQtdPorOferta] = useState<Record<string, number>>({});
   useEffect(() => {
     let ativo = true;
 
@@ -109,6 +109,10 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
   }, [ofertasFiltradas, ofertaSelecionadaId]);
 
   async function reservar(oferta: Oferta) {
+  const quantidadeSelecionada = Math.max(
+    1,
+    Number(reservaQtdPorOferta[oferta.id] || 1)
+  );
     if (!user) {
       setMsg(t.loginToReserve);
       return;
@@ -139,13 +143,13 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
   passageiroId: user.uid,
   usuarioNome: user.displayName || user.email || user.uid,
   passageiroNome: user.displayName || user.email || user.uid,
-  quantidade: 1,
+  quantidade: quantidadeSelecionada,
   embarcaIdx: 0,
   embarcaLabel: data.origem?.endereco || "Origem",
   desembarcaIdx: Array.isArray((data as any).paradas) ? (data as any).paradas.length + 1 : 1,
   desembarcaLabel: data.destino?.endereco || "Destino",
   valorTrechoUnitario: Number(data.valor || 0),
-  valorTrechoTotal: Number(data.valor || 0),
+  valorTrechoTotal: Number(data.valor || 0) * quantidadeSelecionada,
   status: "pendente",
   criadoEm: Date.now(),
 };
@@ -157,7 +161,48 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
 
     setMsg(t.reserveSuccess);
   }
+async function cancelarMinhaReserva(oferta: Oferta) {
+  if (!user) {
+    setMsg(t.loginToReserve);
+    return;
+  }
 
+  const ofertaRef = doc(db, "ofertas", oferta.id);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ofertaRef);
+
+    if (!snap.exists()) {
+      throw new Error("Oferta nao encontrada");
+    }
+
+    const data = snap.data() as Oferta;
+    const reservas = Array.isArray(data.reservas) ? data.reservas : [];
+
+    const reservasAtualizadas = reservas.map((reserva:any) => {
+      const donoReserva =
+        String(reserva?.usuarioId || "") === user.uid ||
+        String(reserva?.passageiroId || "") === user.uid;
+
+      if (!donoReserva) return reserva;
+      if (String(reserva?.status || "") === "cancelada") return reserva;
+
+      return {
+        ...reserva,
+        status: "cancelada",
+        canceladaEm: Date.now(),
+        canceladaPor: user.uid,
+      };
+    });
+
+    tx.update(ofertaRef, {
+      reservas: reservasAtualizadas,
+      atualizadoEm: Date.now(),
+    });
+  });
+
+  setMsg("Reserva cancelada.");
+}
   async function solicitarReserva(oferta: Oferta) {
     try {
       await reservar(oferta);
@@ -200,13 +245,22 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
           <div className="offersGrid marketplaceList">
             {ofertasFiltradas.map((oferta) => (
               <OfferCard
-                key={oferta.id}
-                oferta={oferta}
-                selected={ofertaSelecionada?.id === oferta.id}
-                onSelecionar={(item) => setOfertaSelecionadaId(item.id)}
-                onReservar={solicitarReserva}
-                onAbrirChat={setChatOferta}
-              />
+  key={oferta.id}
+  oferta={oferta}
+  selected={ofertaSelecionada?.id === oferta.id}
+  usuarioId={user?.uid || ""}
+  quantidadeReserva={reservaQtdPorOferta[oferta.id] || 1}
+  onMudarQuantidadeReserva={(qtd) =>
+    setReservaQtdPorOferta((prev) => ({
+      ...prev,
+      [oferta.id]: qtd
+    }))
+  }
+  onSelecionar={(item) => setOfertaSelecionadaId(item.id)}
+  onReservar={solicitarReserva}
+  onCancelarReserva={cancelarMinhaReserva}
+  onAbrirChat={setChatOferta}
+/>
             ))}
 
             {ofertasFiltradas.length === 0 && (
