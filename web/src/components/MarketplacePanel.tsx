@@ -6,7 +6,7 @@ import { OfferCard } from "@/components/OfferCard";
 import { useWebI18n } from "@/components/WebI18nProvider";
 import { db } from "@/lib/firebase";
 import { carregarPlanoUsuario, premiumPodeCriarOferta } from "@/lib/plan";
-import type { Oferta, ReservaOferta, TipoOferta } from "@/lib/types";
+import type { Oferta, TipoOferta } from "@/lib/types";
 import { collection, doc, onSnapshot, orderBy, query, runTransaction } from "firebase/firestore";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
@@ -134,13 +134,21 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
         throw new Error("Voce ja possui reserva ativa nesta oferta.");
       }
 
-      const novaReserva: ReservaOferta = {
-        usuarioId: user.uid,
-        usuarioNome: user.displayName || user.email || user.uid,
-        status: "pendente",
-        criadoEm: Date.now(),
-      };
-
+      const novaReserva = {
+  usuarioId: user.uid,
+  passageiroId: user.uid,
+  usuarioNome: user.displayName || user.email || user.uid,
+  passageiroNome: user.displayName || user.email || user.uid,
+  quantidade: 1,
+  embarcaIdx: 0,
+  embarcaLabel: data.origem?.endereco || "Origem",
+  desembarcaIdx: Array.isArray((data as any).paradas) ? (data as any).paradas.length + 1 : 1,
+  desembarcaLabel: data.destino?.endereco || "Destino",
+  valorTrechoUnitario: Number(data.valor || 0),
+  valorTrechoTotal: Number(data.valor || 0),
+  status: "pendente",
+  criadoEm: Date.now(),
+};
       tx.update(ofertaRef, {
         reservas: [...reservas, novaReserva],
         atualizadoEm: Date.now(),

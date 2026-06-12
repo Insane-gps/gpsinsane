@@ -20,7 +20,16 @@ function labelTipo(tipo: Oferta["tipo"]): string {
 
 export function OfferCard({ oferta, onReservar, onAbrirChat, onSelecionar, selected = false, disabled = false }: OfferCardProps) {
   const { t } = useWebI18n();
-  const reservasAtivas = (oferta.reservas || []).filter((item) => item.status !== "cancelada").length;
+  const reservasAtivas = (oferta.reservas || []).filter((item) => item.status !== "cancelada");
+
+const vagasReservadas = reservasAtivas.reduce((total, reserva:any) => {
+  return total + Math.max(0, Number(reserva?.quantidade || 1));
+}, 0);
+
+const vagasDisponiveis = Math.max(
+  0,
+  Number(oferta.quantidadePessoas || 0) - vagasReservadas
+);
   const typeClass = oferta.tipo === "entrega"
     ? "delivery"
     : oferta.tipo === "carona_oferecida"
@@ -57,8 +66,8 @@ export function OfferCard({ oferta, onReservar, onAbrirChat, onSelecionar, selec
       <div className="metaGrid">
         <span><strong>{t.offerValue}:</strong> {typeof oferta.valor === "number" ? `R$ ${oferta.valor.toFixed(2)}` : "A combinar"}</span>
         <span><strong>{t.offerSeats}:</strong> {oferta.quantidadePessoas || 0}</span>
-        <span><strong>{t.offerReservations}:</strong> {reservasAtivas}</span>
-        <span><strong>{t.offerWhen}:</strong> {oferta.dataSaida || "--"} {oferta.horarioSaida || ""}</span>
+        <span><strong>Vagas disponíveis:</strong> {vagasDisponiveis} de {oferta.quantidadePessoas || 0}</span>
+<span><strong>Vagas reservadas:</strong> {vagasReservadas}</span>
       </div>
 
       <footer>
