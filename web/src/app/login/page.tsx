@@ -63,6 +63,8 @@ export default function LoginPage() {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [confirmarEmail, setConfirmarEmail] = useState("");
+  const [confirmarSenha, setConfirmarSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
@@ -81,8 +83,29 @@ export default function LoginPage() {
     setLoading(true);
     try {
       if (modoCadastro) {
-        await cadastrarEmail(emailNormalizado, senha, nome);
-      } else {
+
+  const confirmarEmailNormalizado = String(confirmarEmail || "")
+    .replace(/\s+/g, "")
+    .trim();
+
+  if (
+    emailNormalizado.toLowerCase() !==
+    confirmarEmailNormalizado.toLowerCase()
+  ) {
+    setErro("Os e-mails não conferem.");
+    setLoading(false);
+    return;
+  }
+
+  if (senha !== confirmarSenha) {
+    setErro("As senhas não conferem.");
+    setLoading(false);
+    return;
+  }
+
+  await cadastrarEmail(emailNormalizado, senha, nome);
+
+} else {
         await loginEmail(emailNormalizado, senha);
       }
       router.push("/ofertas");
@@ -133,7 +156,21 @@ export default function LoginPage() {
             required
           />
         </label>
-
+        {modoCadastro && (
+  <label>
+    Confirmar e-mail
+    <input
+      type="text"
+      inputMode="email"
+      autoCapitalize="none"
+      autoCorrect="off"
+      spellCheck={false}
+      value={confirmarEmail}
+      onChange={(e) => setConfirmarEmail(e.target.value)}
+      required
+    />
+  </label>
+)}
         <label>
           Senha
           <div style={{ position: "relative" }}>
@@ -171,7 +208,18 @@ export default function LoginPage() {
             </button>
           </div>
         </label>
-
+       {modoCadastro && (
+  <label>
+    Confirmar senha
+    <input
+      type={mostrarSenha ? "text" : "password"}
+      value={confirmarSenha}
+      onChange={(e) => setConfirmarSenha(e.target.value)}
+      minLength={6}
+      required
+    />
+  </label>
+)}
         {erro && <p className="errorLine">{erro}</p>}
 
         <button disabled={loading} className="btnPrimary" type="submit">
