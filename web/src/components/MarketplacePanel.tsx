@@ -59,11 +59,47 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
       setOfertas(next);
     });
   }, []);
+ function vagasReservadasOferta(oferta: Oferta) {
+  const reservasAtivas = Array.isArray(oferta.reservas)
+    ? oferta.reservas.filter((reserva:any) => String(reserva?.status || "") !== "cancelada")
+    : [];
 
+  return reservasAtivas.reduce((total:number, reserva:any) => {
+    return total + Math.max(0, Number(reserva?.quantidade || 1));
+  }, 0);
+}
+
+function vagasDisponiveisOferta(oferta: Oferta) {
+  return Math.max(
+    0,
+    Number(oferta.quantidadePessoas || 0) - vagasReservadasOferta(oferta)
+  );
+}
+
+function usuarioTemReservaAtiva(oferta: Oferta, uid?: string) {
+  const usuario = String(uid || "").trim();
+  if (!usuario) return false;
+
+  return (oferta.reservas || []).some((reserva:any) => {
+    const donoReserva =
+      String(reserva?.usuarioId || "") === usuario ||
+      String(reserva?.passageiroId || "") === usuario;
+
+    return donoReserva && String(reserva?.status || "") !== "cancelada";
+  });
+}
   const ofertasFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     return ofertas.filter((oferta) => {
       if (oferta.status !== "ativa") return false;
+     if (
+  oferta.tipo === "carona_oferecida" &&
+  vagasDisponiveisOferta(oferta) <= 0 &&
+  String(oferta.criadorId || "") !== String(user?.uid || "") &&
+  !usuarioTemReservaAtiva(oferta, user?.uid)
+) {
+  return false;
+}
       if (filtroTipo && oferta.tipo !== filtroTipo) return false;
       if (!termo) return true;
 
@@ -76,8 +112,7 @@ export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
 
       return pool.some((item) => item.includes(termo));
     });
-  }, [ofertas, filtroTipo, busca, planoAtual]);
-
+  }, [ofertas, filtroTipo, busca, planoAtual, user?.uid]);
   const ofertaSelecionada = useMemo(() => {
     return ofertasFiltradas.find((oferta) => oferta.id === ofertaSelecionadaId) || null;
   }, [ofertasFiltradas, ofertaSelecionadaId]);
