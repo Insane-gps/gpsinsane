@@ -52,6 +52,20 @@ const minhaReservaAtiva = (oferta.reservas || []).find((reserva:any) => {
 
   return donoReserva && String(reserva?.status || "") !== "cancelada";
 });
+const valorPorPessoa = Number(oferta.valor || 0);
+
+const valorTotalSelecionado = Number(
+  (valorPorPessoa * Math.max(1, Number(quantidadeReserva || 1))).toFixed(2)
+);
+
+const reservaAtivaAny = minhaReservaAtiva as any;
+
+const valorTotalMinhaReserva = minhaReservaAtiva
+  ? Number(
+      reservaAtivaAny?.valorTrechoTotal ||
+      valorPorPessoa * Math.max(1, Number(reservaAtivaAny?.quantidade || 1))
+    )
+  : 0;
   const typeClass = oferta.tipo === "entrega"
     ? "delivery"
     : oferta.tipo === "carona_oferecida"
@@ -86,7 +100,14 @@ const minhaReservaAtiva = (oferta.reservas || []).find((reserva:any) => {
       </p>
 
       <div className="metaGrid">
-        <span><strong>{t.offerValue}:</strong> {typeof oferta.valor === "number" ? `R$ ${oferta.valor.toFixed(2)}` : "A combinar"}</span>
+        <span>
+  <strong>{minhaReservaAtiva ? "Valor reservado" : "Valor"}:</strong>{" "}
+  {valorPorPessoa > 0
+    ? minhaReservaAtiva
+      ? `R$ ${valorTotalMinhaReserva.toFixed(2)}`
+      : `R$ ${valorTotalSelecionado.toFixed(2)}`
+    : "A combinar"}
+</span>
         <span><strong>{t.offerSeats}:</strong> {oferta.quantidadePessoas || 0}</span>
         <span><strong>Vagas disponíveis:</strong> {vagasDisponiveis} de {oferta.quantidadePessoas || 0}</span>
 <span><strong>Vagas reservadas:</strong> {vagasReservadas}</span>
@@ -139,7 +160,9 @@ const minhaReservaAtiva = (oferta.reservas || []).find((reserva:any) => {
     onReservar(oferta);
   }}
 >
-  {minhaReservaAtiva ? "Cancelar reserva" : t.reserve}
+  {minhaReservaAtiva
+  ? "Cancelar reserva"
+  : `Solicitar reserva • R$ ${valorTotalSelecionado.toFixed(2)}`}
 </button>
         <button
           disabled={disabled}
