@@ -4,11 +4,11 @@ import { useAuth } from "@/components/AuthProvider";
 import { useWebI18n } from "@/components/WebI18nProvider";
 import { db } from "@/lib/firebase";
 import { carregarPlanoUsuario, premiumPodeCriarOferta } from "@/lib/plan";
+import { calcularPrecoInteligente } from "@/lib/pricingEngine";
 import type { PlanoUsuario, TipoOferta } from "@/lib/types";
 import { addDoc, collection } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { calcularPrecoInteligente } from "../../../../data/pricing/pricingEngine";
 
 type VeiculoPerfil = {
   marca?: string;
