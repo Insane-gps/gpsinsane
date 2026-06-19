@@ -8,6 +8,7 @@ import type { PlanoUsuario, TipoOferta } from "@/lib/types";
 import { addDoc, collection } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
+import { calcularPrecoInteligente } from "../../../../data/pricing/pricingEngine";
 
 type VeiculoPerfil = {
   marca?: string;
@@ -142,7 +143,22 @@ function textoMotoristaVeiculo(nome: string, veiculo?: VeiculoPerfil) {
 function montarEndereco(partes: string[]) {
   return partes.map((p) => String(p || "").trim()).filter(Boolean).join(", ");
 }
+async function calcularRotaWeb(origem:{lat:number; lng:number}, destino:{lat:number; lng:number}) {
+  const url = `https://router.project-osrm.org/route/v1/driving/${origem.lng},${origem.lat};${destino.lng},${destino.lat}?overview=false`;
 
+  const response = await fetch(url);
+  if (!response.ok) return null;
+
+  const data = await response.json();
+  const rota = data?.routes?.[0];
+
+  if (!rota) return null;
+
+  return {
+    distanciaMetros: Number(rota.distance || 0),
+    duracaoSegundos: Number(rota.duration || 0),
+  };
+}
 async function geocodeAddress(query: string) {
   const q = String(query || "").trim();
   if (!q) return null;
@@ -179,6 +195,7 @@ export default function OferecerPage() {
 
   const [plano, setPlano] = useState<PlanoUsuario>("free");
   const [tipo, setTipo] = useState<TipoOferta>("carona_solicitada");
+  const [modoPreco, setModoPreco] = useState<"compartilhado" | "direto">("compartilhado");
   const [nomePassageiro, setNomePassageiro] = useState("");
   const [descricaoObjeto, setDescricaoObjeto] = useState("");
   const [quantidadePessoas, setQuantidadePessoas] = useState(1);
@@ -198,6 +215,19 @@ export default function OferecerPage() {
   const [horarioSaida, setHorarioSaida] = useState("");
   const [observacaoOpcional, setObservacaoOpcional] = useState("");
   const [valorOferta, setValorOferta] = useState("");
+  const [valorSugerido, setValorSugerido] = useState(0);
+const [valorMinimo, setValorMinimo] = useState(0);
+const [valorMaximo, setValorMaximo] = useState(0);
+const [distanciaKm, setDistanciaKm] = useState(0);
+const [tempoMin, setTempoMin] = useState(0);
+const [fatoresPreco, setFatoresPreco] = useState({
+  picoCalculado: 1,
+  cidadeCalculada: 1,
+  urgenciaCalculada: 1,
+  premiumCalculado: 1,
+  fatorVagasCalculado: 1,
+  fatorPassageirosCalculado: 1,
+});
   const [perfilNome, setPerfilNome] = useState("");
   const [perfilVeiculos, setPerfilVeiculos] = useState<VeiculoPerfil[]>([]);
   const [veiculoPerfilSelecionado, setVeiculoPerfilSelecionado] = useState(0);
@@ -258,7 +288,75 @@ export default function OferecerPage() {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [showPlanCards]);
+async function calcularPrecoAntesDoValorWeb() {
+  try {
+    const enderecoOrigemCompleto = montarEndereco([
+      ruaOrigem,
+      numeroOrigem,
+      bairroOrigem,
+      cidadeOrigem,
+      estadoOrigem,
+    ]);
 
+    const enderecoDestinoCompleto = montarEndereco([
+      ruaDestino,
+      numeroDestino,
+      bairroDestino,
+      cidadeDestino,
+      estadoDestino,
+    ]);
+
+    if (!ruaOrigem.trim() || !ruaDestino.trim()) return;
+
+    async function geocodeFallback(completo: string, rua: string, numero: string, cidade: string, estado: string) {
+      let coord = await geocodeAddress(completo);
+      if (coord) return coord;
+
+      coord = await geocodeAddress(montarEndereco([rua, numero, cidade, estado]));
+      if (coord) return coord;
+
+      return geocodeAddress(montarEndereco([rua, cidade, estado]));
+    }
+
+    const origemCoord = await geocodeFallback(enderecoOrigemCompleto, ruaOrigem, numeroOrigem, cidadeOrigem, estadoOrigem);
+    const destinoCoord = await geocodeFallback(enderecoDestinoCompleto, ruaDestino, numeroDestino, cidadeDestino, estadoDestino);
+
+    if (!origemCoord || !destinoCoord) return;
+
+    const rota = await calcularRotaWeb(origemCoord, destinoCoord);
+
+    const kmCalculadoFinal = Number(((rota?.distanciaMetros || 0) / 1000).toFixed(2));
+    const minCalculadoFinal = Number(((rota?.duracaoSegundos || 0) / 60).toFixed(0));
+
+    setDistanciaKm(kmCalculadoFinal);
+    setTempoMin(minCalculadoFinal);
+
+    const precoCalculado = calcularPrecoInteligente({
+  km: kmCalculadoFinal,
+  min: minCalculadoFinal,
+  tipo,
+  estado: estadoOrigem,
+  dataSaida,
+  horarioSaida,
+  isPro: premiumPodeCriarOferta(plano),
+  vagas: quantidadePessoas,
+  modoPreco,
+});
+    setValorSugerido(precoCalculado.valorCalculado);
+    setValorMinimo(precoCalculado.valorMinimoCalculado);
+    setValorMaximo(precoCalculado.valorMaximoCalculado);
+    setFatoresPreco({
+  picoCalculado: precoCalculado.picoCalculado,
+  cidadeCalculada: precoCalculado.cidadeCalculada,
+  urgenciaCalculada: precoCalculado.urgenciaCalculada,
+  premiumCalculado: precoCalculado.premiumCalculado,
+  fatorVagasCalculado: precoCalculado.fatorVagasCalculado,
+  fatorPassageirosCalculado: precoCalculado.fatorPassageirosCalculado,
+});
+  } catch (error) {
+    console.log("Erro ao calcular preço web:", error);
+  }
+}
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!user) {
@@ -345,7 +443,36 @@ export default function OferecerPage() {
         setErro("Nao foi possivel localizar o endereco de destino.");
         return;
       }
+     const rota = await calcularRotaWeb(origemCoord, destinoCoord);
 
+const kmCalculadoFinal = Number(((rota?.distanciaMetros || 0) / 1000).toFixed(2));
+const minCalculadoFinal = Number(((rota?.duracaoSegundos || 0) / 60).toFixed(0));
+
+setDistanciaKm(kmCalculadoFinal);
+setTempoMin(minCalculadoFinal);
+
+const precoCalculado = calcularPrecoInteligente({
+  km: kmCalculadoFinal,
+  min: minCalculadoFinal,
+  tipo,
+  estado: estadoOrigem,
+  dataSaida,
+  horarioSaida,
+  isPro: premiumPodeCriarOferta(plano),
+  vagas: quantidadePessoas,
+});
+
+setValorSugerido(precoCalculado.valorCalculado);
+setValorMinimo(precoCalculado.valorMinimoCalculado);
+setValorMaximo(precoCalculado.valorMaximoCalculado);
+setFatoresPreco({
+  picoCalculado: precoCalculado.picoCalculado,
+  cidadeCalculada: precoCalculado.cidadeCalculada,
+  urgenciaCalculada: precoCalculado.urgenciaCalculada,
+  premiumCalculado: precoCalculado.premiumCalculado,
+  fatorVagasCalculado: precoCalculado.fatorVagasCalculado,
+  fatorPassageirosCalculado: precoCalculado.fatorPassageirosCalculado,
+});
       const paradasConvertidas: Array<{ lat: number; lng: number; endereco: string }> = [];
       if (tipo === "carona_oferecida" && paradasSelecionadas.length > 0) {
         for (const parada of paradasSelecionadas) {
@@ -359,8 +486,9 @@ export default function OferecerPage() {
       const veiculoSelecionado = perfilVeiculos[veiculoPerfilSelecionado] || perfilVeiculos[0] || null;
 
       await addDoc(collection(db, "ofertas"), {
-        tipo,
-        criadorId: user.uid,
+       tipo,
+modoPreco,
+criadorId: user.uid,
         criadorNome: user.displayName || user.email || user.uid,
         criadoEm: Date.now(),
         nomeOuDescricao: tipo === "entrega" ? descricaoObjeto.trim() : nomePassageiro.trim(),
@@ -376,7 +504,18 @@ export default function OferecerPage() {
           endereco: enderecoDestinoCompleto,
         },
         paradas: paradasConvertidas,
-        valor: Number(valorOferta || 0),
+        valor: Number(String(valorOferta || "").replace(",", ".")) || precoCalculado.valorCalculado,
+valorManual: Number(String(valorOferta || "").replace(",", ".")) || null,
+valorSugerido: precoCalculado.valorCalculado,
+valorMinimoRecomendado: precoCalculado.valorMinimoCalculado,
+valorMaximoRecomendado: precoCalculado.valorMaximoCalculado,
+distanciaKm: kmCalculadoFinal,
+tempoMin: minCalculadoFinal,
+fatorPico: precoCalculado.picoCalculado,
+fatorCidade: precoCalculado.cidadeCalculada,
+fatorUrgencia: precoCalculado.urgenciaCalculada,
+fatorPremium: precoCalculado.premiumCalculado,
+fatorVagas: precoCalculado.fatorVagasCalculado,
         status: "ativa",
         dataSaida: String(dataSaida || "").trim() || null,
         horarioSaida: String(horarioSaida || "").trim() || null,
@@ -539,7 +678,41 @@ export default function OferecerPage() {
             </div>
           </div>
         )}
+          {(tipo === "carona_solicitada" || tipo === "carona_oferecida") && (
+  <div>
+    <p className="muted">Modo da viagem</p>
 
+    <div className="qtyRow">
+      <button
+        type="button"
+        className={`qtyBtn ${modoPreco === "compartilhado" ? "active" : ""}`}
+        onClick={() => {
+          setModoPreco("compartilhado");
+          void calcularPrecoAntesDoValorWeb();
+        }}
+      >
+        Compartilhada
+      </button>
+
+      <button
+        type="button"
+        className={`qtyBtn ${modoPreco === "direto" ? "active" : ""}`}
+        onClick={() => {
+          setModoPreco("direto");
+          void calcularPrecoAntesDoValorWeb();
+        }}
+      >
+        Direta
+      </button>
+    </div>
+
+    <p className="muted">
+      {modoPreco === "compartilhado"
+        ? "Menor custo, podendo dividir a viagem."
+        : "Viagem exclusiva, sem multiplicar por passageiros."}
+    </p>
+  </div>
+)}
         {tipo !== "entrega" && !!perfilNome && (
           <button
             type="button"
@@ -650,10 +823,28 @@ export default function OferecerPage() {
           />
           <span className="muted">{observacaoOpcional.length}/{MAX_OBSERVACAO_CHARS}</span>
         </label>
-
+{valorSugerido > 0 && (
+  <div className="noticeLine">
+    <strong>Valor sugerido pelo INSANE GPS: R$ {valorSugerido.toFixed(2)}</strong>
+    <br />
+    Mínimo recomendado: R$ {valorMinimo.toFixed(2)}
+    <br />
+    Máximo recomendado: R$ {valorMaximo.toFixed(2)}
+    <br />
+    Distância: {distanciaKm.toFixed(1)} km • Tempo estimado: {tempoMin} min
+  </div>
+)}
         <label>
           Valor oferecido (R$)
-          <input value={valorOferta} onChange={(e) => setValorOferta(e.target.value)} placeholder="Ex: 25" inputMode="decimal" />
+          <input
+  value={valorOferta}
+  onFocus={() => {
+    void calcularPrecoAntesDoValorWeb();
+  }}
+  onChange={(e) => setValorOferta(e.target.value)}
+  placeholder="Ex: 25"
+  inputMode="decimal"
+/>
         </label>
 
         {erro && <p className="errorLine">{erro}</p>}
