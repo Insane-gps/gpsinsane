@@ -6,8 +6,8 @@ import { db } from "@/lib/firebase";
 import { carregarPlanoUsuario, premiumPodeCriarOferta } from "@/lib/plan";
 import { calcularPrecoInteligente } from "@/lib/pricingEngine";
 import type { PlanoUsuario, TipoOferta } from "@/lib/types";
-import { addDoc, collection } from "firebase/firestore";
-import { useRouter } from "next/navigation";
+import { addDoc, collection, doc, getDoc, updateDoc } from "firebase/firestore";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
 type VeiculoPerfil = {
@@ -143,6 +143,21 @@ function textoMotoristaVeiculo(nome: string, veiculo?: VeiculoPerfil) {
 function montarEndereco(partes: string[]) {
   return partes.map((p) => String(p || "").trim()).filter(Boolean).join(", ");
 }
+function separarEnderecoWeb(endereco:string) {
+  const partes = String(endereco || "")
+    .split(",")
+    .map((p)=>p.trim())
+    .filter(Boolean);
+
+  return {
+    rua: partes[0] || "",
+    numero: partes[1] || "",
+    bairro: partes[2] || "",
+    cidade: partes[3] || "",
+    estado: partes[4] || ""
+  };
+}
+
 async function calcularRotaWeb(origem:{lat:number; lng:number}, destino:{lat:number; lng:number}) {
   const url = `https://router.project-osrm.org/route/v1/driving/${origem.lng},${origem.lat};${destino.lng},${destino.lat}?overview=false`;
 
@@ -190,16 +205,30 @@ async function geocodeAddress(query: string) {
 
 export default function OferecerPage() {
   const router = useRouter();
-  const { t } = useWebI18n();
+const searchParams = useSearchParams();
+const editarId = searchParams.get("editar");
+const { t } = useWebI18n();
   const { user, loading } = useAuth();
 
   const [plano, setPlano] = useState<PlanoUsuario>("free");
   const [tipo, setTipo] = useState<TipoOferta>("carona_solicitada");
-  const [modoPreco, setModoPreco] = useState<"compartilhado" | "direto">("compartilhado");
+const [opcoesCaronaVisiveis, setOpcoesCaronaVisiveis] = useState(false);
+const [modoPreco, setModoPreco] = useState<"compartilhado" | "direto">("compartilhado");
   const [nomePassageiro, setNomePassageiro] = useState("");
   const [descricaoObjeto, setDescricaoObjeto] = useState("");
   const [quantidadePessoas, setQuantidadePessoas] = useState(1);
-  const [ruaOrigem, setRuaOrigem] = useState("");
+const [tipoBagagem, setTipoBagagem] = useState<
+  "sem_bagagem" |
+  "mochila" |
+  "mala_pequena" |
+  "mala_media" |
+  "mala_grande" |
+  "caixa_pequena" |
+  "caixa_media" |
+  "caixa_grande" |
+  "volume_grande"
+>("sem_bagagem");
+const [ruaOrigem, setRuaOrigem] = useState("");
   const [numeroOrigem, setNumeroOrigem] = useState("");
   const [bairroOrigem, setBairroOrigem] = useState("");
   const [cidadeOrigem, setCidadeOrigem] = useState("");
@@ -256,7 +285,60 @@ const [fatoresPreco, setFatoresPreco] = useState({
       setPerfilVeiculos([]);
     }
   }, [user]);
+  
+  useEffect(() => {
+  async function carregarOfertaParaEditar() {
+    if (!editarId || !user?.uid) return;
 
+    try {
+      const snap = await getDoc(doc(db, "ofertas", editarId));
+
+      if (!snap.exists()) {
+        setErro("Oferta não encontrada para edição.");
+        return;
+      }
+
+      const oferta:any = snap.data();
+
+      if (String(oferta?.criadorId || "") !== String(user.uid || "")) {
+        setErro("Você só pode editar ofertas criadas por você.");
+        return;
+      }
+
+      setTipo(oferta?.tipo || "carona_solicitada");
+      setModoPreco(oferta?.modoPreco || oferta?.modoCarona || "compartilhado");
+      setTipoBagagem(oferta?.tipoBagagem || "sem_bagagem");
+      setNomePassageiro(oferta?.tipo === "entrega" ? "" : String(oferta?.nomeOuDescricao || ""));
+      setDescricaoObjeto(oferta?.tipo === "entrega" ? String(oferta?.nomeOuDescricao || "") : "");
+      setQuantidadePessoas(Number(oferta?.quantidadePessoas || 1));
+      setDataSaida(String(oferta?.dataSaida || ""));
+      setHorarioSaida(String(oferta?.horarioSaida || ""));
+      setObservacaoOpcional(String(oferta?.observacao || ""));
+      setValorOferta(String(oferta?.valor || ""));
+
+      const origemSeparada = separarEnderecoWeb(String(oferta?.origem?.endereco || ""));
+const destinoSeparado = separarEnderecoWeb(String(oferta?.destino?.endereco || ""));
+
+setRuaOrigem(origemSeparada.rua);
+setNumeroOrigem(origemSeparada.numero);
+setBairroOrigem(origemSeparada.bairro);
+setCidadeOrigem(origemSeparada.cidade);
+setEstadoOrigem(origemSeparada.estado);
+
+setRuaDestino(destinoSeparado.rua);
+setNumeroDestino(destinoSeparado.numero);
+setBairroDestino(destinoSeparado.bairro);
+setCidadeDestino(destinoSeparado.cidade);
+setEstadoDestino(destinoSeparado.estado);
+
+      setOpcoesCaronaVisiveis(true);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Erro ao carregar oferta para edição.");
+    }
+  }
+
+  void carregarOfertaParaEditar();
+}, [editarId, user?.uid]);
   useEffect(() => {
     if (tipo === "carona_solicitada" && perfilNome && !nomePassageiro.trim()) {
       setNomePassageiro(perfilNome);
@@ -365,15 +447,31 @@ async function calcularPrecoAntesDoValorWeb() {
       return;
     }
 
-    if (!premiumPodeCriarOferta(plano)) {
-      setErro("Plano free/pro: para publicar ofertas, ative Premium.");
-      setShowPlanCards(true);
-      return;
-    }
+   if (!premiumPodeCriarOferta(plano) && tipo === "carona_oferecida") {
+  setErro("Plano free/pro: para oferecer carona e ganhar dinheiro, ative Premium.");
+  setShowPlanCards(true);
+  return;
+}
 
-    setSaving(true);
-    setErro("");
-    setOk("");
+    const bagagemGrandeSelecionada =
+  tipo !== "entrega" &&
+  modoPreco !== "direto" &&
+  (
+    tipoBagagem === "mala_grande" ||
+    tipoBagagem === "volume_grande"
+  );
+
+if (bagagemGrandeSelecionada) {
+  const continuar = window.confirm(
+    "Bagagens grandes costumam ser mais confortáveis em uma viagem Exclusiva. Mesmo assim, você pode criar a oferta compartilhada. O motorista decide se aceita ou não."
+  );
+
+  if (!continuar) return;
+}
+
+setSaving(true);
+setErro("");
+setOk("");
 
     try {
       if (!ruaOrigem.trim() || !ruaDestino.trim()) {
@@ -460,6 +558,7 @@ const precoCalculado = calcularPrecoInteligente({
   horarioSaida,
   isPro: premiumPodeCriarOferta(plano),
   vagas: quantidadePessoas,
+  modoPreco,
 });
 
 setValorSugerido(precoCalculado.valorCalculado);
@@ -485,9 +584,34 @@ setFatoresPreco({
 
       const veiculoSelecionado = perfilVeiculos[veiculoPerfilSelecionado] || perfilVeiculos[0] || null;
 
-      await addDoc(collection(db, "ofertas"), {
+const valorDigitado = Number(String(valorOferta || "").replace(",", "."));
+
+const valorMinimoPermitido =
+  modoPreco === "direto"
+    ? Math.max(
+        10,
+        Number((precoCalculado.valorMinimoCalculado * 0.9).toFixed(2))
+      )
+    : 10;
+
+if (
+  Number.isFinite(valorDigitado) &&
+  valorDigitado > 0 &&
+  valorDigitado < valorMinimoPermitido
+) {
+  setErro(`O valor mínimo permitido é R$ ${valorMinimoPermitido.toFixed(2)}.`);
+  return;
+}
+
+const dadosOferta = {
        tipo,
 modoPreco,
+modoCarona: modoPreco,
+prioridadeMotoristasAte:
+  modoPreco === "direto"
+    ? Date.now() + 120000
+    : null,
+prioridadeMotoristasDirecao: modoPreco === "direto",
 criadorId: user.uid,
         criadorNome: user.displayName || user.email || user.uid,
         criadoEm: Date.now(),
@@ -504,8 +628,8 @@ criadorId: user.uid,
           endereco: enderecoDestinoCompleto,
         },
         paradas: paradasConvertidas,
-        valor: Number(String(valorOferta || "").replace(",", ".")) || precoCalculado.valorCalculado,
-valorManual: Number(String(valorOferta || "").replace(",", ".")) || null,
+        valor: Number.isFinite(valorDigitado) && valorDigitado > 0 ? valorDigitado : precoCalculado.valorCalculado,
+valorManual: Number.isFinite(valorDigitado) && valorDigitado > 0 ? valorDigitado : null,
 valorSugerido: precoCalculado.valorCalculado,
 valorMinimoRecomendado: precoCalculado.valorMinimoCalculado,
 valorMaximoRecomendado: precoCalculado.valorMaximoCalculado,
@@ -516,14 +640,23 @@ fatorCidade: precoCalculado.cidadeCalculada,
 fatorUrgencia: precoCalculado.urgenciaCalculada,
 fatorPremium: precoCalculado.premiumCalculado,
 fatorVagas: precoCalculado.fatorVagasCalculado,
-        status: "ativa",
+
+tipoBagagem,
+
+status: "ativa",
         dataSaida: String(dataSaida || "").trim() || null,
         horarioSaida: String(horarioSaida || "").trim() || null,
         veiculoModelo: tipo === "carona_oferecida" ? String(veiculoSelecionado?.modelo || "").trim() : "",
         veiculoPlaca: tipo === "carona_oferecida" ? String(veiculoSelecionado?.placa || "").trim().toUpperCase() : "",
         observacao: String(observacaoOpcional || "").trim(),
-        reservas: [],
-      });
+                reservas: [],
+      };
+
+      if (editarId) {
+        await updateDoc(doc(db, "ofertas", editarId), dadosOferta);
+      } else {
+        await addDoc(collection(db, "ofertas"), dadosOferta);
+      }
 
       const veiculoDefault = perfilVeiculos[veiculoPerfilSelecionado] || perfilVeiculos[0];
       setNomePassageiro(
@@ -550,9 +683,10 @@ fatorVagas: precoCalculado.fatorVagasCalculado,
       setDataSaida("");
       setHorarioSaida("");
       setObservacaoOpcional("");
-      setValorOferta("");
+setValorOferta("");
+setTipoBagagem("sem_bagagem");
 
-      setOk("Oferta criada com sucesso.");
+setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso.");
       setTimeout(() => router.push("/procurar"), 900);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao criar oferta");
@@ -613,17 +747,46 @@ fatorVagas: precoCalculado.fatorVagasCalculado,
         </p>
       )}
 
-      <form className="formGrid" onSubmit={onSubmit}>
+      <form
+  className="formGrid"
+  onSubmit={onSubmit}
+  onKeyDown={(event) => {
+    if (event.key !== "Enter") return;
+
+    const alvo = event.target as HTMLElement;
+    if (alvo.tagName === "TEXTAREA") return;
+
+    event.preventDefault();
+
+    const campos = Array.from(
+      event.currentTarget.querySelectorAll("input, textarea, button")
+    ) as HTMLElement[];
+
+    const indexAtual = campos.indexOf(alvo);
+    const proximo = campos[indexAtual + 1];
+
+    if (proximo) proximo.focus();
+  }}
+>
         <p className="noticeLine">Aviso legal: esta plataforma conecta usuarios. Transacoes e combinacoes sao responsabilidade das partes.</p>
 
         <div className="typeSelector">
-          <button type="button" className={`typeBtn ${tipo === "carona_solicitada" ? "active blue" : ""}`} onClick={() => setTipo("carona_solicitada")}>Solicitar carona</button>
+          <button
+  type="button"
+  className={`typeBtn ${tipo === "carona_solicitada" ? "active blue" : ""}`}
+  onClick={() => {
+    setTipo("carona_solicitada");
+    setOpcoesCaronaVisiveis(true);
+  }}
+>
+  Solicitar carona
+</button>
           <button
             type="button"
             className={`typeBtn ${tipo === "carona_oferecida" ? "active cyan" : ""}`}
             onClick={() => {
               if (!premiumPodeCriarOferta(plano)) {
-                setErro("Plano free/pro: para publicar ofertas, ative Premium.");
+                setErro("Plano free/pro: para oferecer carona e ganhar dinheiro, ative Premium.");
                 setShowPlanCards(true);
                 return;
               }
@@ -633,12 +796,24 @@ fatorVagas: precoCalculado.fatorVagasCalculado,
           >
             Ofertar carona {!premiumPodeCriarOferta(plano) ? "- PREMIUM" : ""}
           </button>
-          <button type="button" className={`typeBtn ${tipo === "entrega" ? "active orange" : ""}`} onClick={() => setTipo("entrega")}>Solicitar entrega</button>
+          <button
+  type="button"
+  className={`typeBtn ${tipo === "entrega" ? "active orange" : ""}`}
+  onClick={() => {
+    setTipo("entrega");
+    setModoPreco("compartilhado");
+    setTipoBagagem("caixa_pequena");
+  }}
+>
+  Solicitar entrega
+</button>
         </div>
 
         {!premiumPodeCriarOferta(plano) && (
-          <p className="muted">Plano free/pro: visualiza caronas para contratar. Para publicar ofertas, ative Premium.</p>
-        )}
+  <p className="muted">
+    Plano free/pro: pode solicitar carona e entrega. Para oferecer carona e ganhar dinheiro, ative Premium.
+  </p>
+)}
 
         <label>
           {tipo === "entrega" ? "Objeto para entrega" : tipo === "carona_oferecida" ? "Motorista / veiculo" : "Nome do passageiro"}
@@ -678,39 +853,48 @@ fatorVagas: precoCalculado.fatorVagasCalculado,
             </div>
           </div>
         )}
-          {(tipo === "carona_solicitada" || tipo === "carona_oferecida") && (
+          {tipo !== "entrega" &&
+ (tipo === "carona_oferecida" || (tipo === "carona_solicitada" && opcoesCaronaVisiveis)) && (
   <div>
     <p className="muted">Modo da viagem</p>
 
     <div className="qtyRow">
       <button
-        type="button"
-        className={`qtyBtn ${modoPreco === "compartilhado" ? "active" : ""}`}
-        onClick={() => {
-          setModoPreco("compartilhado");
-          void calcularPrecoAntesDoValorWeb();
-        }}
-      >
-        Compartilhada
-      </button>
+  type="button"
+  className={`qtyBtn ${modoPreco === "compartilhado" ? "active" : ""}`}
+  onClick={() => {
+    setTipo("carona_solicitada");
+    setModoPreco("compartilhado");
+    setQuantidadePessoas(1);
+    setTipoBagagem("sem_bagagem");
+    setOpcoesCaronaVisiveis(true);
+    void calcularPrecoAntesDoValorWeb();
+  }}
+>
+  Compartilhada
+</button>
 
-      <button
-        type="button"
-        className={`qtyBtn ${modoPreco === "direto" ? "active" : ""}`}
-        onClick={() => {
-          setModoPreco("direto");
-          void calcularPrecoAntesDoValorWeb();
-        }}
-      >
-        Direta
-      </button>
+     <button
+  type="button"
+  className={`qtyBtn ${modoPreco === "direto" ? "active" : ""}`}
+  onClick={() => {
+    setTipo("carona_solicitada");
+    setModoPreco("direto");
+    setQuantidadePessoas(1);
+    setTipoBagagem("sem_bagagem");
+    setOpcoesCaronaVisiveis(true);
+    void calcularPrecoAntesDoValorWeb();
+  }}
+>
+  Exclusiva
+</button>
     </div>
 
     <p className="muted">
-      {modoPreco === "compartilhado"
-        ? "Menor custo, podendo dividir a viagem."
-        : "Viagem exclusiva, sem multiplicar por passageiros."}
-    </p>
+  {modoPreco === "compartilhado"
+    ? "💺 Menor custo, podendo dividir a viagem."
+    : "🚗 Viagem só para você."}
+</p>
   </div>
 )}
         {tipo !== "entrega" && !!perfilNome && (
@@ -730,17 +914,63 @@ fatorVagas: precoCalculado.fatorVagasCalculado,
           </button>
         )}
 
-        {tipo !== "entrega" && (
-          <div>
-            <p className="muted">{tipo === "carona_oferecida" ? "Vagas disponiveis" : "Quantidade de pessoas"}</p>
-            <div className="qtyRow">
+        {tipo !== "entrega" && modoPreco !== "direto" && (
+  <div>
+    <p className="muted">{tipo === "carona_oferecida" ? "Vagas disponiveis" : "Quantidade de pessoas"}</p>
+    <div className="qtyRow">
               {[1, 2, 3, 4].map((q) => (
                 <button type="button" key={q} className={`qtyBtn ${quantidadePessoas === q ? "active" : ""}`} onClick={() => setQuantidadePessoas(q)}>{q}</button>
               ))}
             </div>
           </div>
         )}
+        {tipo !== "entrega" && modoPreco !== "direto" && (
+  <div>
+    <p className="muted">Bagagem</p>
 
+    <div className="qtyRow">
+     {([
+  ["sem_bagagem","Sem bagagem"],
+  ["mochila","Mochila"],
+  ["mala_pequena","Mala pequena"],
+  ["mala_media","Mala média"],
+  ["mala_grande","Mala grande"]
+] as const).map(([valor,texto])=>(
+  <button
+    type="button"
+    key={valor}
+    className={`qtyBtn ${tipoBagagem===valor ? "active" : ""}`}
+    onClick={()=>setTipoBagagem(valor)}
+  >
+    {texto}
+  </button>
+))}
+    </div>
+  </div>
+)}
+{tipo === "entrega" && (
+  <div>
+    <p className="muted">Volume da entrega</p>
+
+    <div className="qtyRow">
+      {([
+        ["caixa_pequena","Caixa pequena"],
+        ["caixa_media","Caixa média"],
+        ["caixa_grande","Caixa grande"],
+        ["volume_grande","Volume grande"]
+      ] as const).map(([valor,texto])=>(
+        <button
+          type="button"
+          key={valor}
+          className={`qtyBtn ${tipoBagagem===valor ? "active" : ""}`}
+          onClick={()=>setTipoBagagem(valor)}
+        >
+          {texto}
+        </button>
+      ))}
+    </div>
+  </div>
+)}
         <div className="addrGrid">
           <div>
             <p className="muted">{tipo === "entrega" ? "Endereco de retirada" : tipo === "carona_oferecida" ? "Endereco de saida" : "Endereco de embarque"}</p>
@@ -851,7 +1081,7 @@ fatorVagas: precoCalculado.fatorVagasCalculado,
         {ok && <p className="okLine">{ok}</p>}
 
         <button disabled={saving || !user} className="btnPrimary" type="submit">
-          {saving ? "Aguarde..." : "Criar oferta"}
+          {saving ? "Aguarde..." : editarId ? "Salvar alterações" : "Criar oferta"}
         </button>
       </form>
 
