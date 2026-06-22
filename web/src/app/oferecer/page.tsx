@@ -9,7 +9,7 @@ import type { PlanoUsuario, TipoOferta } from "@/lib/types";
 import { addDoc, collection, doc, getDoc, updateDoc } from "firebase/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-
+export const dynamic = "force-dynamic";
 type VeiculoPerfil = {
   marca?: string;
   modelo?: string;
