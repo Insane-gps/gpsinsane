@@ -8,8 +8,8 @@ import { calcularPrecoInteligente } from "@/lib/pricingEngine";
 import type { PlanoUsuario, TipoOferta } from "@/lib/types";
 import { addDoc, collection, doc, getDoc, updateDoc } from "firebase/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
-export const dynamic = "force-dynamic";
+import { FormEvent, Suspense, useEffect, useState } from "react";
+
 type VeiculoPerfil = {
   marca?: string;
   modelo?: string;
@@ -203,7 +203,7 @@ async function geocodeAddress(query: string) {
   }
 }
 
-export default function OferecerPage() {
+function OferecerPageContent() {
   const router = useRouter();
 const searchParams = useSearchParams();
 const editarId = searchParams.get("editar");
@@ -1170,6 +1170,14 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
           </section>
         </div>
       )}
-    </section>
+        </section>
+  );
+}
+
+export default function OferecerPage() {
+  return (
+    <Suspense fallback={<section className="sectionPane">Carregando...</section>}>
+      <OferecerPageContent />
+    </Suspense>
   );
 }
