@@ -1,5 +1,15 @@
 export type TipoOferta = "entrega" | "carona_solicitada" | "carona_oferecida";
 
+export type SubtipoEntrega = "comum" | "restaurante";
+
+export type TipoEstabelecimento =
+  | "restaurante"
+  | "lanchonete"
+  | "pizzaria"
+  | "hamburgueria"
+  | "mercado"
+  | "outro";
+
 export type StatusOferta = "ativa" | "aceita" | "cancelada" | "finalizada";
 
 export type GeoPonto = {
@@ -18,11 +28,37 @@ export type ReservaOferta = {
 export type Oferta = {
   id: string;
   tipo: TipoOferta;
+  subtipoEntrega?: SubtipoEntrega;
+
   criadorId: string;
   criadorNome?: string;
   criadoEm: number;
+
   nomeOuDescricao?: string;
-  quantidadePessoas?: number;
+
+  nomeEstabelecimento?: string;
+  tipoEstabelecimento?: TipoEstabelecimento;
+  nomeCliente?: string;
+  telefoneCliente?: string;
+  precisaBagTermica?: boolean;
+  fragil?: boolean;
+
+codigoEntrega?: string;
+codigoEntregaConfirmado?: boolean;
+codigoEntregaConfirmadoEm?: number;
+
+clienteFinalTemApp?: boolean;
+clienteFinalUid?: string;
+
+clienteFinalLinkToken?: string;
+clienteFinalLinkCriadoEm?: number;
+clienteFinalLinkEnviado?: boolean;
+clienteFinalLinkEnviadoEm?: number | null;
+
+clienteFinalAvaliouEntregador?: boolean;
+clienteFinalAvaliouEstabelecimento?: boolean;
+
+quantidadePessoas?: number;
   origem?: GeoPonto;
   destino?: GeoPonto;
   valor?: number;
@@ -30,6 +66,11 @@ export type Oferta = {
   dataSaida?: string;
   horarioSaida?: string;
   reservas?: ReservaOferta[];
+
+  modoPreco?: "compartilhado" | "direto";
+  modoCarona?: "compartilhado" | "direto";
+  tipoBagagem?: string;
+  observacao?: string;
 };
 
 export type MensagemChat = {

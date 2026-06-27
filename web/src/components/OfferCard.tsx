@@ -19,12 +19,18 @@ type OfferCardProps = {
   disabled?: boolean;
 };
 
-function labelTipo(tipo: Oferta["tipo"]): string {
-  if (tipo === "entrega") return "Entrega";
-  if (tipo === "carona_oferecida") return "Carona oferecida";
+function labelTipo(oferta: Oferta): string {
+  if (oferta.tipo === "entrega") {
+    if ((oferta as any).subtipoEntrega === "restaurante") {
+      return "Entrega de restaurante";
+    }
+
+    return "Entrega";
+  }
+
+  if (oferta.tipo === "carona_oferecida") return "Carona oferecida";
   return "Carona solicitada";
 }
-
 export function OfferCard({
   oferta,
   onReservar,
@@ -103,11 +109,49 @@ export function OfferCard({
       }}
     >
       <header>
-        <span className="pill">{labelTipo(oferta.tipo)}</span>
+        <span className="pill">{labelTipo(oferta)}</span>
         <span className="muted">{oferta.status || "ativa"}</span>
       </header>
 
-      <h3>{oferta.nomeOuDescricao || t.offerNoDescription}</h3>
+      <h3>
+  {(oferta as any).subtipoEntrega === "restaurante"
+    ? `🍔 ${(oferta as any).nomeEstabelecimento || oferta.nomeOuDescricao || "Entrega de restaurante"}`
+    : oferta.nomeOuDescricao || t.offerNoDescription}
+</h3>
+
+{(oferta as any).subtipoEntrega === "restaurante" && (
+  <div style={{
+    marginTop: 8,
+    marginBottom: 8,
+    padding: 10,
+    borderRadius: 12,
+    background: "rgba(249, 115, 22, 0.12)",
+    border: "1px solid rgba(249, 115, 22, 0.35)"
+  }}>
+    <p className="muted" style={{margin: 0}}>
+      <strong>Tipo:</strong>{" "}
+      {(oferta as any).tipoEstabelecimento || "Restaurante/Lanchonete"}
+    </p>
+
+    {!!(oferta as any).nomeCliente && (
+      <p className="muted" style={{margin: "4px 0 0"}}>
+        <strong>Cliente:</strong> {(oferta as any).nomeCliente}
+      </p>
+    )}
+
+    {!!(oferta as any).precisaBagTermica && (
+      <p style={{color:"#facc15",fontSize:12,fontWeight:800,margin:"6px 0 0"}}>
+        🧊 Precisa bag térmica
+      </p>
+    )}
+
+    {!!(oferta as any).fragil && (
+      <p style={{color:"#fecaca",fontSize:12,fontWeight:800,margin:"6px 0 0"}}>
+        ⚠️ Pedido frágil
+      </p>
+    )}
+  </div>
+)}
       {String((oferta as any)?.modoPreco || "").toLowerCase() === "direto" &&
   Number((oferta as any)?.prioridadeMotoristasAte || 0) > Date.now() && (
   <p style={{color:"#facc15",fontSize:12,fontWeight:800,marginTop:4}}>

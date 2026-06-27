@@ -181,30 +181,20 @@ function motoristaVaiNaDirecaoDaOfertaWeb(ofertaMotorista:any, ofertaExclusiva:a
       if (oferta.status !== "ativa") return false;
       const prioridadeAte = Number((oferta as any)?.prioridadeMotoristasAte || 0);
 
+const prioridadeMotoristas = Array.isArray((oferta as any)?.prioridadeMotoristas)
+  ? (oferta as any).prioridadeMotoristas.map((id:any)=>String(id))
+  : [];
+
 const exclusivaComPrioridade =
   String((oferta as any)?.modoPreco || "").toLowerCase() === "direto" &&
-  prioridadeAte > Date.now();
+  prioridadeAte > Date.now() &&
+  prioridadeMotoristas.length > 0;
 
 if (
   exclusivaComPrioridade &&
-  String(oferta.criadorId || "") !== String(user?.uid || "")
+  !prioridadeMotoristas.includes(String(user?.uid || ""))
 ) {
-  const minhasOfertasMotorista = ofertas.filter((m:any)=>
-    String(m?.tipo || "") === "carona_oferecida" &&
-    (
-      String(m?.criadorId || "") === String(user?.uid || "") ||
-      String(m?.criadorEmail || "").toLowerCase() === String(user?.email || "").toLowerCase()
-    ) &&
-    String(m?.status || "") === "ativa"
-  );
-
-  const motoristaCompativel = minhasOfertasMotorista.some((m:any)=>
-    motoristaVaiNaDirecaoDaOfertaWeb(m, oferta)
-  );
-
-  if(!motoristaCompativel){
-    return false;
-  }
+  return false;
 }
      if (
   oferta.tipo === "carona_oferecida" &&

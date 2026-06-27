@@ -5,8 +5,8 @@ import { useWebI18n } from "@/components/WebI18nProvider";
 import { db } from "@/lib/firebase";
 import { carregarPlanoUsuario, premiumPodeCriarOferta } from "@/lib/plan";
 import { calcularPrecoInteligente } from "@/lib/pricingEngine";
-import type { PlanoUsuario, TipoOferta } from "@/lib/types";
-import { addDoc, collection, doc, getDoc, updateDoc } from "firebase/firestore";
+import type { PlanoUsuario, TipoEstabelecimento, TipoOferta } from "@/lib/types";
+import { addDoc, collection, doc, getDoc, getDocs, updateDoc } from "firebase/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 
@@ -159,20 +159,145 @@ function separarEnderecoWeb(endereco:string) {
 }
 
 async function calcularRotaWeb(origem:{lat:number; lng:number}, destino:{lat:number; lng:number}) {
-  const url = `https://router.project-osrm.org/route/v1/driving/${origem.lng},${origem.lat};${destino.lng},${destino.lat}?overview=false`;
+  function distanciaLinhaRetaKm(){
+    const R = 6371;
+    const toRad = (v:number)=>v * Math.PI / 180;
 
-  const response = await fetch(url);
-  if (!response.ok) return null;
+    const dLat = toRad(destino.lat - origem.lat);
+    const dLng = toRad(destino.lng - origem.lng);
+    const lat1 = toRad(origem.lat);
+    const lat2 = toRad(destino.lat);
 
-  const data = await response.json();
-  const rota = data?.routes?.[0];
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1) * Math.cos(lat2) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
 
-  if (!rota) return null;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  try{
+    const url = `https://router.project-osrm.org/route/v1/driving/${origem.lng},${origem.lat};${destino.lng},${destino.lat}?overview=false`;
+
+    const response = await fetch(url);
+
+    if(response.ok){
+      const data = await response.json();
+      const rota = data?.routes?.[0];
+
+      if(rota && Number(rota.distance) > 0){
+        return {
+          distanciaMetros: Number(rota.distance || 0),
+          duracaoSegundos: Number(rota.duration || 0),
+        };
+      }
+    }
+  }catch(error){
+    console.log("Erro OSRM web:", error);
+  }
+
+  const kmEstimado = distanciaLinhaRetaKm() * 1.25;
+  const minutosEstimados = (kmEstimado / 65) * 60;
 
   return {
-    distanciaMetros: Number(rota.distance || 0),
-    duracaoSegundos: Number(rota.duration || 0),
+    distanciaMetros: kmEstimado * 1000,
+    duracaoSegundos: minutosEstimados * 60,
   };
+}
+function distanciaMetrosWeb(a:{lat:number;lng:number}, b:{lat:number;lng:number}) {
+  const R = 6371000;
+  const toRad = (value:number) => (value * Math.PI) / 180;
+
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+async function buscarMotoristasPrioridadeWeb(oferta:any, uidCriador:string) {
+  const resultado:string[] = [];
+
+  if (String(oferta?.modoPreco || "").toLowerCase() !== "direto") {
+    return resultado;
+  }
+
+  const origemOferta = {
+    lat:Number(oferta?.origem?.lat),
+    lng:Number(oferta?.origem?.lng),
+  };
+
+  const destinoOferta = {
+    lat:Number(oferta?.destino?.lat),
+    lng:Number(oferta?.destino?.lng),
+  };
+
+  if (
+    !Number.isFinite(origemOferta.lat) ||
+    !Number.isFinite(origemOferta.lng) ||
+    !Number.isFinite(destinoOferta.lat) ||
+    !Number.isFinite(destinoOferta.lng)
+  ) {
+    return resultado;
+  }
+
+  try {
+    const snap = await getDocs(collection(db, "intencoesMotoristas"));
+    const agora = Date.now();
+
+    snap.forEach((docAtual) => {
+      const dados:any = docAtual.data();
+      const motoristaId = String(dados?.usuarioId || docAtual.id || "").trim();
+
+      if (!motoristaId) return;
+      if (motoristaId === uidCriador) return;
+      if (String(dados?.status || "ativa") !== "ativa") return;
+
+      const expiraEm = Number(dados?.expiraEm || 0);
+      if (expiraEm > 0 && expiraEm < agora) return;
+
+      const origemMotorista = {
+        lat:Number(dados?.origem?.lat),
+        lng:Number(dados?.origem?.lng),
+      };
+
+      const destinoMotorista = {
+        lat:Number(dados?.destino?.lat),
+        lng:Number(dados?.destino?.lng),
+      };
+
+      if (
+        !Number.isFinite(origemMotorista.lat) ||
+        !Number.isFinite(origemMotorista.lng) ||
+        !Number.isFinite(destinoMotorista.lat) ||
+        !Number.isFinite(destinoMotorista.lng)
+      ) {
+        return;
+      }
+
+      const origemPerto =
+        distanciaMetrosWeb(origemOferta, origemMotorista) <= 60000 ||
+        distanciaMetrosWeb(origemOferta, destinoMotorista) <= 60000;
+
+      const destinoPerto =
+        distanciaMetrosWeb(destinoOferta, origemMotorista) <= 60000 ||
+        distanciaMetrosWeb(destinoOferta, destinoMotorista) <= 60000;
+
+      if (origemPerto || destinoPerto) {
+        resultado.push(motoristaId);
+      }
+    });
+  } catch (error) {
+    console.log("Erro ao buscar motoristas prioridade web:", error);
+  }
+
+  return Array.from(new Set(resultado));
 }
 async function geocodeAddress(query: string) {
   const q = String(query || "").trim();
@@ -228,6 +353,15 @@ const [tipoBagagem, setTipoBagagem] = useState<
   "caixa_grande" |
   "volume_grande"
 >("sem_bagagem");
+
+const [subtipoEntrega, setSubtipoEntrega] = useState<"comum" | "restaurante">("comum");
+const [nomeEstabelecimento, setNomeEstabelecimento] = useState("");
+const [tipoEstabelecimento, setTipoEstabelecimento] = useState<TipoEstabelecimento>("restaurante");
+const [nomeCliente, setNomeCliente] = useState("");
+const [telefoneCliente, setTelefoneCliente] = useState("");
+const [fragil, setFragil] = useState(false);
+const [precisaBagTermica, setPrecisaBagTermica] = useState(false);
+
 const [ruaOrigem, setRuaOrigem] = useState("");
   const [numeroOrigem, setNumeroOrigem] = useState("");
   const [bairroOrigem, setBairroOrigem] = useState("");
@@ -306,10 +440,19 @@ const [fatoresPreco, setFatoresPreco] = useState({
       }
 
       setTipo(oferta?.tipo || "carona_solicitada");
-      setModoPreco(oferta?.modoPreco || oferta?.modoCarona || "compartilhado");
-      setTipoBagagem(oferta?.tipoBagagem || "sem_bagagem");
-      setNomePassageiro(oferta?.tipo === "entrega" ? "" : String(oferta?.nomeOuDescricao || ""));
-      setDescricaoObjeto(oferta?.tipo === "entrega" ? String(oferta?.nomeOuDescricao || "") : "");
+setModoPreco(oferta?.modoPreco || oferta?.modoCarona || "compartilhado");
+setTipoBagagem(oferta?.tipoBagagem || "sem_bagagem");
+
+setSubtipoEntrega(oferta?.subtipoEntrega || "comum");
+setNomeEstabelecimento(String(oferta?.nomeEstabelecimento || ""));
+setTipoEstabelecimento(oferta?.tipoEstabelecimento || "restaurante");
+setNomeCliente(String(oferta?.nomeCliente || ""));
+setTelefoneCliente(String(oferta?.telefoneCliente || ""));
+setFragil(!!oferta?.fragil);
+setPrecisaBagTermica(!!oferta?.precisaBagTermica);
+
+setNomePassageiro(oferta?.tipo === "entrega" ? "" : String(oferta?.nomeOuDescricao || ""));
+setDescricaoObjeto(oferta?.tipo === "entrega" ? String(oferta?.nomeOuDescricao || "") : "");
       setQuantidadePessoas(Number(oferta?.quantidadePessoas || 1));
       setDataSaida(String(oferta?.dataSaida || ""));
       setHorarioSaida(String(oferta?.horarioSaida || ""));
@@ -605,17 +748,52 @@ if (
 
 const dadosOferta = {
        tipo,
+subtipoEntrega: tipo === "entrega" ? subtipoEntrega : null,
+
+nomeEstabelecimento:
+  tipo === "entrega" && subtipoEntrega === "restaurante"
+    ? nomeEstabelecimento.trim()
+    : "",
+
+tipoEstabelecimento:
+  tipo === "entrega" && subtipoEntrega === "restaurante"
+    ? tipoEstabelecimento
+    : null,
+
+nomeCliente:
+  tipo === "entrega" && subtipoEntrega === "restaurante"
+    ? nomeCliente.trim()
+    : "",
+
+telefoneCliente:
+  tipo === "entrega" && subtipoEntrega === "restaurante"
+    ? telefoneCliente.trim()
+    : "",
+
+fragil:
+  tipo === "entrega" && subtipoEntrega === "restaurante"
+    ? fragil
+    : false,
+
+precisaBagTermica:
+  tipo === "entrega" && subtipoEntrega === "restaurante"
+    ? precisaBagTermica
+    : false,
+
 modoPreco,
 modoCarona: modoPreco,
-prioridadeMotoristasAte:
-  modoPreco === "direto"
-    ? Date.now() + 120000
-    : null,
-prioridadeMotoristasDirecao: modoPreco === "direto",
+prioridadeMotoristas: [],
+prioridadeMotoristasAte: null,
+prioridadeMotoristasDirecao: false,
 criadorId: user.uid,
         criadorNome: user.displayName || user.email || user.uid,
         criadoEm: Date.now(),
-        nomeOuDescricao: tipo === "entrega" ? descricaoObjeto.trim() : nomePassageiro.trim(),
+        nomeOuDescricao:
+          tipo === "entrega" && subtipoEntrega === "restaurante"
+            ? `${nomeEstabelecimento.trim()} - ${descricaoObjeto.trim()}`
+            : tipo === "entrega"
+              ? descricaoObjeto.trim()
+              : nomePassageiro.trim(),
         quantidadePessoas: Number(quantidadePessoas || 0),
         origem: {
           lat: origemCoord.lat,
@@ -651,11 +829,22 @@ status: "ativa",
         observacao: String(observacaoOpcional || "").trim(),
                 reservas: [],
       };
+const motoristasPrioridade = await buscarMotoristasPrioridadeWeb(dadosOferta, user.uid);
 
+const dadosOfertaFinal = {
+  ...dadosOferta,
+  prioridadeMotoristas: modoPreco === "direto" ? motoristasPrioridade : [],
+  prioridadeMotoristasAte:
+    modoPreco === "direto" && motoristasPrioridade.length > 0
+      ? Date.now() + 120000
+      : null,
+  prioridadeMotoristasDirecao:
+    modoPreco === "direto" && motoristasPrioridade.length > 0,
+};
       if (editarId) {
-        await updateDoc(doc(db, "ofertas", editarId), dadosOferta);
+        await updateDoc(doc(db, "ofertas", editarId), dadosOfertaFinal);
       } else {
-        await addDoc(collection(db, "ofertas"), dadosOferta);
+        await addDoc(collection(db, "ofertas"), dadosOfertaFinal);
       }
 
       const veiculoDefault = perfilVeiculos[veiculoPerfilSelecionado] || perfilVeiculos[0];
@@ -815,18 +1004,140 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
   </p>
 )}
 
-        <label>
-          {tipo === "entrega" ? "Objeto para entrega" : tipo === "carona_oferecida" ? "Motorista / veiculo" : "Nome do passageiro"}
-          <input
-            value={tipo === "entrega" ? descricaoObjeto : nomePassageiro}
-            onChange={(e) => {
-              if (tipo === "entrega") setDescricaoObjeto(e.target.value);
-              else setNomePassageiro(e.target.value);
-            }}
-            placeholder={tipo === "entrega" ? "Ex: Caixa media, 10kg" : tipo === "carona_oferecida" ? "Ex: Carlos - Sedan prata" : "Ex: John Smith"}
-            required
-          />
-        </label>
+       {tipo === "entrega" && (
+  <div>
+    <p className="muted">Tipo de entrega</p>
+
+    <div className="qtyRow">
+      <button
+        type="button"
+        className={`qtyBtn ${subtipoEntrega === "comum" ? "active" : ""}`}
+        onClick={() => {
+          setSubtipoEntrega("comum");
+          setNomeEstabelecimento("");
+          setNomeCliente("");
+          setTelefoneCliente("");
+          setFragil(false);
+          setPrecisaBagTermica(false);
+        }}
+      >
+        Entrega comum
+      </button>
+
+      <button
+        type="button"
+        className={`qtyBtn ${subtipoEntrega === "restaurante" ? "active" : ""}`}
+        onClick={() => {
+          setSubtipoEntrega("restaurante");
+          setTipoBagagem("caixa_pequena");
+        }}
+      >
+        Restaurante/Lanchonete
+      </button>
+    </div>
+
+    <p className="muted">
+      {subtipoEntrega === "restaurante"
+        ? "🍔 Pedido de estabelecimento para entregador Premium aceitar."
+        : "📦 Entrega comum de objeto, caixa ou volume."}
+    </p>
+  </div>
+)}
+
+{tipo === "entrega" && subtipoEntrega === "restaurante" && (
+  <>
+    <label>
+      Nome do estabelecimento
+      <input
+        value={nomeEstabelecimento}
+        onChange={(e) => setNomeEstabelecimento(e.target.value)}
+        placeholder="Ex: Lanchonete do João"
+        required
+      />
+    </label>
+
+    <label>
+      Tipo do estabelecimento
+      <select
+        value={tipoEstabelecimento}
+        onChange={(e) => setTipoEstabelecimento(e.target.value as TipoEstabelecimento)}
+        required
+      >
+        <option value="restaurante">Restaurante</option>
+        <option value="lanchonete">Lanchonete</option>
+        <option value="pizzaria">Pizzaria</option>
+        <option value="hamburgueria">Hamburgueria</option>
+        <option value="mercado">Mercado pequeno</option>
+        <option value="outro">Outro</option>
+      </select>
+    </label>
+
+    <label>
+      Nome do cliente
+      <input
+        value={nomeCliente}
+        onChange={(e) => setNomeCliente(e.target.value)}
+        placeholder="Ex: Maria Silva"
+        required
+      />
+    </label>
+
+    <label>
+      Telefone do cliente opcional
+      <input
+        value={telefoneCliente}
+        onChange={(e) => setTelefoneCliente(e.target.value)}
+        placeholder="Ex: (47) 99999-9999"
+      />
+    </label>
+
+    <div className="qtyRow">
+      <button
+        type="button"
+        className={`qtyBtn ${precisaBagTermica ? "active" : ""}`}
+        onClick={() => setPrecisaBagTermica((v) => !v)}
+      >
+        Precisa bag térmica
+      </button>
+
+      <button
+        type="button"
+        className={`qtyBtn ${fragil ? "active" : ""}`}
+        onClick={() => setFragil((v) => !v)}
+      >
+        Frágil
+      </button>
+    </div>
+  </>
+)}
+
+<label>
+  {tipo === "entrega"
+    ? subtipoEntrega === "restaurante"
+      ? "Resumo do pedido"
+      : "Objeto para entrega"
+    : tipo === "carona_oferecida"
+      ? "Motorista / veiculo"
+      : "Nome do passageiro"}
+
+  <input
+    value={tipo === "entrega" ? descricaoObjeto : nomePassageiro}
+    onChange={(e) => {
+      if (tipo === "entrega") setDescricaoObjeto(e.target.value);
+      else setNomePassageiro(e.target.value);
+    }}
+    placeholder={
+      tipo === "entrega"
+        ? subtipoEntrega === "restaurante"
+          ? "Ex: Pedido 243 - 2 hambúrgueres e 1 refrigerante"
+          : "Ex: Caixa media, 10kg"
+        : tipo === "carona_oferecida"
+          ? "Ex: Carlos - Sedan prata"
+          : "Ex: John Smith"
+    }
+    required
+  />
+</label>
 
         {tipo === "carona_oferecida" && perfilVeiculos.length > 0 && (
           <div>
@@ -1054,14 +1365,27 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
           <span className="muted">{observacaoOpcional.length}/{MAX_OBSERVACAO_CHARS}</span>
         </label>
 {valorSugerido > 0 && (
-  <div className="noticeLine">
-    <strong>Valor sugerido pelo INSANE GPS: R$ {valorSugerido.toFixed(2)}</strong>
-    <br />
-    Mínimo recomendado: R$ {valorMinimo.toFixed(2)}
-    <br />
-    Máximo recomendado: R$ {valorMaximo.toFixed(2)}
-    <br />
-    Distância: {distanciaKm.toFixed(1)} km • Tempo estimado: {tempoMin} min
+  <div
+    style={{
+      background:"rgba(15, 23, 42, 0.72)",
+      border:"1px solid rgba(34, 211, 238, 0.35)",
+      borderRadius:14,
+      padding:14,
+      marginTop:10,
+      marginBottom:14
+    }}
+  >
+    <div style={{fontWeight:800,color:"#67e8f9",marginBottom:6}}>
+      Valor sugerido pelo INSANE GPS: R$ {valorSugerido.toFixed(2)}
+    </div>
+
+    <div style={{color:"#cbd5e1",fontSize:14,lineHeight:1.5}}>
+      Mínimo recomendado: R$ {valorMinimo.toFixed(2)}
+      <br />
+      Máximo recomendado: R$ {valorMaximo.toFixed(2)}
+      <br />
+      Distância: {distanciaKm.toFixed(1)} km • Tempo estimado: {tempoMin} min
+    </div>
   </div>
 )}
         <label>
@@ -1069,6 +1393,9 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
           <input
   value={valorOferta}
   onFocus={() => {
+    void calcularPrecoAntesDoValorWeb();
+  }}
+  onClick={() => {
     void calcularPrecoAntesDoValorWeb();
   }}
   onChange={(e) => setValorOferta(e.target.value)}

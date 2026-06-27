@@ -1,8 +1,8 @@
 "use client";
 
 import { useWebI18n } from "@/components/WebI18nProvider";
-import type { Oferta, TipoOferta } from "@/lib/types";
-import { mdiCubeSend, mdiSeatPassenger } from "@mdi/js";
+import type { Oferta } from "@/lib/types";
+import { mdiCubeSend, mdiFoodForkDrink, mdiSeatPassenger } from "@mdi/js";
 import L from "leaflet";
 import { useEffect, useMemo, useRef } from "react";
 
@@ -40,24 +40,46 @@ function extrairPonto(oferta: Oferta): Coordenadas | null {
   return null;
 }
 
-function labelTipo(tipo: TipoOferta, t: ReturnType<typeof useWebI18n>["t"]): string {
-  if (tipo === "carona_oferecida") return t.mapLegendRide;
-  if (tipo === "entrega") return t.mapLegendDelivery;
+function labelTipo(oferta: Oferta, t: ReturnType<typeof useWebI18n>["t"]): string {
+  if (oferta.tipo === "carona_oferecida") return t.mapLegendRide;
+
+  if (oferta.tipo === "entrega") {
+    if ((oferta as any).subtipoEntrega === "restaurante") {
+      return "Entrega de restaurante";
+    }
+
+    return t.mapLegendDelivery;
+  }
+
   return t.mapLegendRequest;
 }
 
-function markerIcon(tipo: TipoOferta, ativo: boolean) {
-  const classe = tipo === "carona_oferecida"
+function markerIcon(oferta: Oferta, ativo: boolean) {
+  const entregaRestaurante =
+    oferta.tipo === "entrega" &&
+    String((oferta as any).subtipoEntrega || "") === "restaurante";
+
+  const classe = oferta.tipo === "carona_oferecida"
     ? "ride"
-    : tipo === "carona_solicitada"
+    : oferta.tipo === "carona_solicitada"
       ? "request"
-      : "delivery";
-  const path = tipo === "entrega" ? mdiCubeSend : mdiSeatPassenger;
-  const fill = tipo === "entrega"
-    ? (ativo ? "#ffb180" : "#ff8a3d")
-    : tipo === "carona_oferecida"
-      ? (ativo ? "#9affea" : "#00f0b5")
-      : (ativo ? "#a8f3ff" : "#05d1ff");
+      : entregaRestaurante
+        ? "delivery restaurant"
+        : "delivery";
+
+  const path = entregaRestaurante
+    ? mdiFoodForkDrink
+    : oferta.tipo === "entrega"
+      ? mdiCubeSend
+      : mdiSeatPassenger;
+
+  const fill = entregaRestaurante
+    ? (ativo ? "#fed7aa" : "#fb923c")
+    : oferta.tipo === "entrega"
+      ? (ativo ? "#ffb180" : "#ff8a3d")
+      : oferta.tipo === "carona_oferecida"
+        ? (ativo ? "#9affea" : "#00f0b5")
+        : (ativo ? "#a8f3ff" : "#05d1ff");
 
   return L.divIcon({
     className: "mapMarkerIcon",
@@ -132,18 +154,22 @@ export function MapaOfertas({ ofertas, ofertaSelecionadaId, onSelecionarOferta, 
 
     ofertasMapa.forEach(({ oferta, ponto }) => {
       const ativo = ofertaSelecionadaId === oferta.id;
-      const marker = L.marker(ponto, {
-        icon: markerIcon(oferta.tipo, ativo),
-      });
+     const marker = L.marker(ponto, {
+  icon: markerIcon(oferta, ativo),
+});
 
       marker.on("click", () => onSelecionarOferta(oferta));
       marker.bindPopup(`
-        <div class="mapPopup">
-          <strong>${oferta.nomeOuDescricao || t.offerNoDescription}</strong>
-          <span>${labelTipo(oferta.tipo, t)}</span>
-          <span>${oferta.origem?.endereco || oferta.destino?.endereco || t.mapNoCoords}</span>
-        </div>
-      `);
+  <div class="mapPopup">
+    <strong>${
+      (oferta as any).subtipoEntrega === "restaurante"
+        ? `🍔 ${(oferta as any).nomeEstabelecimento || oferta.nomeOuDescricao || "Entrega de restaurante"}`
+        : oferta.nomeOuDescricao || t.offerNoDescription
+    }</strong>
+    <span>${labelTipo(oferta, t)}</span>
+    <span>${oferta.origem?.endereco || oferta.destino?.endereco || t.mapNoCoords}</span>
+  </div>
+`);
 
       marker.addTo(map);
       markersRef.current.push(marker);
