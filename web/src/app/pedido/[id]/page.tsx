@@ -46,8 +46,9 @@ const token = String(searchParams?.get("token") || "");
   const [notaEntregador,setNotaEntregador] = useState(0);
   const [notaEstabelecimento,setNotaEstabelecimento] = useState(0);
   const [comentario,setComentario] = useState("");
-  const [enviando,setEnviando] = useState(false);
-  const [enviado,setEnviado] = useState(false);
+const [voltariaComprar,setVoltariaComprar] = useState<"sim" | "nao" | "">("");
+const [enviando,setEnviando] = useState(false);
+const [enviado,setEnviado] = useState(false);
 
   useEffect(()=>{
     let ativo = true;
@@ -126,7 +127,8 @@ const token = String(searchParams?.get("token") || "");
         criadoEm:Date.now(),
         origem:"cliente_final_link",
         comentario:String(comentario || "").trim(),
-        tokenUsado:token
+voltariaComprar,
+tokenUsado:token
       };
 
       await setDoc(
@@ -155,8 +157,9 @@ const token = String(searchParams?.get("token") || "");
         doc(db,"ofertas",oferta.id),
         {
           clienteFinalAvaliouEntregador:true,
-          clienteFinalAvaliouEstabelecimento:true,
-          clienteFinalAvaliouEm:Date.now()
+clienteFinalAvaliouEstabelecimento:true,
+clienteFinalAvaliouEm:Date.now(),
+clienteFinalVoltariaComprar:voltariaComprar
         },
         { merge:true }
       );
@@ -274,14 +277,36 @@ const token = String(searchParams?.get("token") || "");
           <label>Como foi o estabelecimento?</label>
           {estrelas(notaEstabelecimento,setNotaEstabelecimento)}
 
-          <textarea
-            value={comentario}
-            onChange={(e)=>setComentario(e.target.value)}
-            placeholder="Comentário opcional"
-            className="pedidoTextarea"
-          />
+          <div style={{marginTop:14,marginBottom:10}}>
+  <label>Você voltaria a comprar neste estabelecimento?</label>
 
-          <button
+  <div style={{display:"flex",gap:10,marginTop:8}}>
+    <button
+      type="button"
+      onClick={()=>setVoltariaComprar("sim")}
+      className={voltariaComprar === "sim" ? "pedidoBtnOpcao ativo" : "pedidoBtnOpcao"}
+    >
+      Sim
+    </button>
+
+    <button
+      type="button"
+      onClick={()=>setVoltariaComprar("nao")}
+      className={voltariaComprar === "nao" ? "pedidoBtnOpcao ativo" : "pedidoBtnOpcao"}
+    >
+      Não
+    </button>
+  </div>
+</div>
+
+<textarea
+  value={comentario}
+  onChange={(e)=>setComentario(e.target.value)}
+  placeholder="Comentário opcional"
+  className="pedidoTextarea"
+/>
+
+<button
             className="pedidoBtn"
             disabled={enviando}
             onClick={enviarAvaliacao}
