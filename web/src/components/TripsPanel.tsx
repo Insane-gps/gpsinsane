@@ -55,10 +55,37 @@ export function TripsPanel() {
               <strong>{item.nomeOuDescricao || "Oferta sem descricao"}</strong>
               <span className="pill">{item.status || "ativa"}</span>
             </header>
-            <p><strong>Tipo:</strong> {item.tipo}</p>
-            <p><strong>Origem:</strong> {item.origem?.endereco || "Nao informado"}</p>
-            <p><strong>Destino:</strong> {item.destino?.endereco || "Nao informado"}</p>
-            <p><strong>Data:</strong> {[item.dataSaida, item.horarioSaida].filter(Boolean).join(" ") || "-"}</p>
+            <p><strong>{t.deliveryType}:</strong>{item.tipo}</p>
+            {item.tipo === "entrega" && (
+  <>
+    {!!(item as any).tamanhoPedido && (
+      <p>
+        <strong>Tamanho:</strong>{" "}
+        {{
+          pequeno:"Pedido pequeno",
+          medio:"Pedido médio",
+          grande:"Pedido grande",
+          muito_grande:"Pedido muito grande"
+        }[(item as any).tamanhoPedido as string]}
+      </p>
+    )}
+
+    {String((item as any).bagTermicaModo || "") === "necessaria" && (
+      <p><strong>Bag térmica:</strong> Necessária</p>
+    )}
+
+    {String((item as any).bagTermicaModo || "") === "fornecida" && (
+      <p><strong>Bag térmica:</strong> Fornecida pelo estabelecimento</p>
+    )}
+
+    {!!(item as any).fragil && (
+      <p><strong>Frágil:</strong> Sim</p>
+    )}
+  </>
+)}
+<p><strong>{t.offerOrigin}:</strong> {item.origem?.endereco || t.addressNotProvided}</p>
+<p><strong>{t.offerDestination}:</strong> {item.destino?.endereco || t.addressNotProvided}</p>
+<p><strong>{t.offerWhen}:</strong> {[item.dataSaida, item.horarioSaida].filter(Boolean).join(" ") || "-"}</p>
           </article>
         ))}
       </div>

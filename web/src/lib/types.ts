@@ -10,7 +10,7 @@ export type TipoEstabelecimento =
   | "mercado"
   | "outro";
 
-export type StatusOferta = "ativa" | "aceita" | "cancelada" | "finalizada";
+export type StatusOferta = "ativa" | "aceita" | "em_andamento" | "cancelada" | "finalizada";
 
 export type GeoPonto = {
   lat: number;
@@ -42,7 +42,14 @@ export type Oferta = {
   telefoneCliente?: string;
   precisaBagTermica?: boolean;
   fragil?: boolean;
+bagTermicaModo?: "nao_necessaria" | "necessaria" | "fornecida";
+bagTermicaFornecida?: boolean;
 
+tamanhoPedido?:
+  | "pequeno"
+  | "medio"
+  | "grande"
+  | "muito_grande";
 codigoEntrega?: string;
 codigoEntregaConfirmado?: boolean;
 codigoEntregaConfirmadoEm?: number;
@@ -57,6 +64,15 @@ clienteFinalLinkEnviadoEm?: number | null;
 
 clienteFinalAvaliouEntregador?: boolean;
 clienteFinalAvaliouEstabelecimento?: boolean;
+clienteFinalAvaliouEm?: number;
+clienteFinalVoltariaComprar?: "sim" | "nao" | "";
+entregadorNome?: string;
+entregadorFoto?: string;
+entregadorVeiculo?: string;
+entregadorNotaMedia?: number;
+aceitaPor?: string;
+aceitoPor?: string;
+aceitaPorNome?: string;
 
 quantidadePessoas?: number;
   origem?: GeoPonto;

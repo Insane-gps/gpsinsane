@@ -106,24 +106,24 @@ function isPastTimeToday(value: string) {
   return selectedTotal < nowTotal;
 }
 
-function labelDataHorario(tipo: TipoOferta) {
+function labelDataHorario(tipo: TipoOferta, t: ReturnType<typeof useWebI18n>["t"]) {
   if (tipo === "entrega") {
     return {
-      data: "Data da entrega",
-      hora: "Horario da entrega (estimado)",
+      data: t.deliveryDate,
+      hora: t.estimatedDeliveryTime,
     };
   }
 
   if (tipo === "carona_solicitada") {
     return {
-      data: "Data da carona",
-      hora: "Horario desejado",
+      data: t.rideDate,
+      hora: t.desiredTime,
     };
   }
 
   return {
-    data: "Data de saida",
-    hora: "Horario de saida (estimado)",
+    data: t.departureDate,
+    hora: t.estimatedDepartureTime,
   };
 }
 
@@ -360,7 +360,10 @@ const [tipoEstabelecimento, setTipoEstabelecimento] = useState<TipoEstabelecimen
 const [nomeCliente, setNomeCliente] = useState("");
 const [telefoneCliente, setTelefoneCliente] = useState("");
 const [fragil, setFragil] = useState(false);
-const [precisaBagTermica, setPrecisaBagTermica] = useState(false);
+const [bagTermicaModo, setBagTermicaModo] = useState<"nao_necessaria" | "necessaria" | "fornecida">("nao_necessaria");
+const [tamanhoPedido, setTamanhoPedido] = useState<"pequeno" | "medio" | "grande" | "muito_grande">("pequeno");
+
+const precisaBagTermica = bagTermicaModo === "necessaria";
 
 const [ruaOrigem, setRuaOrigem] = useState("");
   const [numeroOrigem, setNumeroOrigem] = useState("");
@@ -449,7 +452,14 @@ setTipoEstabelecimento(oferta?.tipoEstabelecimento || "restaurante");
 setNomeCliente(String(oferta?.nomeCliente || ""));
 setTelefoneCliente(String(oferta?.telefoneCliente || ""));
 setFragil(!!oferta?.fragil);
-setPrecisaBagTermica(!!oferta?.precisaBagTermica);
+setBagTermicaModo(
+  oferta?.bagTermicaModo === "fornecida"
+    ? "fornecida"
+    : oferta?.bagTermicaModo === "necessaria" || !!oferta?.precisaBagTermica
+      ? "necessaria"
+      : "nao_necessaria"
+);
+setTamanhoPedido(oferta?.tamanhoPedido || "pequeno");
 
 setNomePassageiro(oferta?.tipo === "entrega" ? "" : String(oferta?.nomeOuDescricao || ""));
 setDescricaoObjeto(oferta?.tipo === "entrega" ? String(oferta?.nomeOuDescricao || "") : "");
@@ -606,7 +616,7 @@ async function calcularPrecoAntesDoValorWeb() {
 
 if (bagagemGrandeSelecionada) {
   const continuar = window.confirm(
-    "Bagagens grandes costumam ser mais confortáveis em uma viagem Exclusiva. Mesmo assim, você pode criar a oferta compartilhada. O motorista decide se aceita ou não."
+    t.largeBaggageWarning
   );
 
   if (!continuar) return;
@@ -775,11 +785,25 @@ fragil:
     ? fragil
     : false,
 
+bagTermicaModo:
+  tipo === "entrega" && subtipoEntrega === "restaurante"
+    ? bagTermicaModo
+    : "nao_necessaria",
+
 precisaBagTermica:
   tipo === "entrega" && subtipoEntrega === "restaurante"
-    ? precisaBagTermica
+    ? bagTermicaModo === "necessaria"
     : false,
 
+bagTermicaFornecida:
+  tipo === "entrega" && subtipoEntrega === "restaurante"
+    ? bagTermicaModo === "fornecida"
+    : false,
+
+tamanhoPedido:
+  tipo === "entrega" && subtipoEntrega === "restaurante"
+    ? tamanhoPedido
+    : null,
 modoPreco,
 modoCarona: modoPreco,
 prioridadeMotoristas: [],
@@ -875,7 +899,7 @@ const dadosOfertaFinal = {
 setValorOferta("");
 setTipoBagagem("sem_bagagem");
 
-setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso.");
+setOk(editarId ? "Alterações salvas com sucesso." : t.offerCreated);
       setTimeout(() => router.push("/procurar"), 900);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao criar oferta");
@@ -957,7 +981,7 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
     if (proximo) proximo.focus();
   }}
 >
-        <p className="noticeLine">Aviso legal: esta plataforma conecta usuarios. Transacoes e combinacoes sao responsabilidade das partes.</p>
+        <p className="noticeLine">{t.legalNotice}</p>
 
         <div className="typeSelector">
           <button
@@ -968,7 +992,7 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
     setOpcoesCaronaVisiveis(true);
   }}
 >
-  Solicitar carona
+  {t.requestRide}
 </button>
           <button
             type="button"
@@ -983,7 +1007,7 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
               setShowPlanCards(false);
             }}
           >
-            Ofertar carona {!premiumPodeCriarOferta(plano) ? "- PREMIUM" : ""}
+            {t.offerRide} {!premiumPodeCriarOferta(plano) ? "- PREMIUM" : ""}
           </button>
           <button
   type="button"
@@ -992,133 +1016,187 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
     setTipo("entrega");
     setModoPreco("compartilhado");
     setTipoBagagem("caixa_pequena");
+    setSubtipoEntrega("comum");
   }}
 >
-  Solicitar entrega
+ {t.requestDelivery}
 </button>
         </div>
 
         {!premiumPodeCriarOferta(plano) && (
   <p className="muted">
-    Plano free/pro: pode solicitar carona e entrega. Para oferecer carona e ganhar dinheiro, ative Premium.
+    {t.freePlanOfferHelp}
   </p>
 )}
 
        {tipo === "entrega" && (
   <div>
-    <p className="muted">Tipo de entrega</p>
+    <p className="muted">{t.deliveryType}</p>
 
-    <div className="qtyRow">
+    <div className="typeSelector" style={{gridTemplateColumns:"1fr 1fr"}}>
       <button
         type="button"
-        className={`qtyBtn ${subtipoEntrega === "comum" ? "active" : ""}`}
+        className={`typeBtn ${subtipoEntrega === "comum" ? "active orange" : ""}`}
         onClick={() => {
           setSubtipoEntrega("comum");
           setNomeEstabelecimento("");
           setNomeCliente("");
           setTelefoneCliente("");
           setFragil(false);
-          setPrecisaBagTermica(false);
+          setBagTermicaModo("nao_necessaria");
+          setTipoBagagem("caixa_pequena");
         }}
       >
-        Entrega comum
+       📦 {t.deliveryObject}
       </button>
 
       <button
         type="button"
-        className={`qtyBtn ${subtipoEntrega === "restaurante" ? "active" : ""}`}
+        className={`typeBtn ${subtipoEntrega === "restaurante" ? "active orange" : ""}`}
         onClick={() => {
           setSubtipoEntrega("restaurante");
           setTipoBagagem("caixa_pequena");
         }}
       >
-        Restaurante/Lanchonete
+       🍽 {t.deliveryRestaurant}
       </button>
     </div>
 
     <p className="muted">
-      {subtipoEntrega === "restaurante"
-        ? "🍔 Pedido de estabelecimento para entregador Premium aceitar."
-        : "📦 Entrega comum de objeto, caixa ou volume."}
-    </p>
+  {subtipoEntrega === "restaurante"
+    ? t.restaurantDeliveryDescription
+    : t.commonDeliveryDescription}
+</p>
   </div>
 )}
 
 {tipo === "entrega" && subtipoEntrega === "restaurante" && (
   <>
+  <div
+  style={{
+    background:"rgba(22, 163, 74, 0.18)",
+    border:"1px solid rgba(34, 197, 94, 0.45)",
+    borderRadius:12,
+    padding:12,
+    marginBottom:12
+  }}
+>
+  <strong style={{color:"#bbf7d0"}}>
+    {t.restaurantPickupNoticeTitle}
+  </strong>
+
+  <p style={{color:"#cbd5e1",margin:"6px 0 0",fontSize:13}}>
+    {t.restaurantPickupNoticeText}
+  </p>
+</div>
     <label>
-      Nome do estabelecimento
-      <input
-        value={nomeEstabelecimento}
-        onChange={(e) => setNomeEstabelecimento(e.target.value)}
-        placeholder="Ex: Lanchonete do João"
-        required
-      />
-    </label>
+  {t.restaurantName}
+  <input
+    value={nomeEstabelecimento}
+    onChange={(e) => setNomeEstabelecimento(e.target.value)}
+    placeholder={t.placeholderRestaurantName}
+    required
+  />
+</label>
+
+   <label>
+  {t.restaurantType}
+  <select
+    value={tipoEstabelecimento}
+    onChange={(e) => setTipoEstabelecimento(e.target.value as TipoEstabelecimento)}
+    required
+  >
+    <option value="restaurante">{t.restaurantOptionRestaurant}</option>
+    <option value="lanchonete">{t.restaurantOptionSnackBar}</option>
+    <option value="pizzaria">{t.restaurantOptionPizza}</option>
+    <option value="hamburgueria">{t.restaurantOptionBurger}</option>
+    <option value="mercado">{t.restaurantOptionMarket}</option>
+    <option value="outro">{t.restaurantOptionOther}</option>
+  </select>
+</label>
 
     <label>
-      Tipo do estabelecimento
-      <select
-        value={tipoEstabelecimento}
-        onChange={(e) => setTipoEstabelecimento(e.target.value as TipoEstabelecimento)}
-        required
-      >
-        <option value="restaurante">Restaurante</option>
-        <option value="lanchonete">Lanchonete</option>
-        <option value="pizzaria">Pizzaria</option>
-        <option value="hamburgueria">Hamburgueria</option>
-        <option value="mercado">Mercado pequeno</option>
-        <option value="outro">Outro</option>
-      </select>
-    </label>
+  {t.restaurantCustomer}
+  <input
+    value={nomeCliente}
+    onChange={(e) => setNomeCliente(e.target.value)}
+    placeholder={t.placeholderCustomerName}
+    required
+  />
+</label>
 
-    <label>
-      Nome do cliente
-      <input
-        value={nomeCliente}
-        onChange={(e) => setNomeCliente(e.target.value)}
-        placeholder="Ex: Maria Silva"
-        required
-      />
-    </label>
+<label>
+  {t.restaurantPhone}
+  <input
+    value={telefoneCliente}
+    onChange={(e) => setTelefoneCliente(e.target.value)}
+    placeholder={t.placeholderCustomerPhone}
+  />
+</label>
 
-    <label>
-      Telefone do cliente opcional
-      <input
-        value={telefoneCliente}
-        onChange={(e) => setTelefoneCliente(e.target.value)}
-        placeholder="Ex: (47) 99999-9999"
-      />
-    </label>
+   <div>
+  <p className="muted">{t.thermalBag}</p>
 
-    <div className="qtyRow">
+  <div className="qtyRow">
+    {([
+      ["nao_necessaria",t.thermalBagNotRequired],
+      ["necessaria",t.thermalBagRequired],
+      ["fornecida",t.thermalBagProvided]
+    ] as const).map(([valor,texto])=>(
       <button
         type="button"
-        className={`qtyBtn ${precisaBagTermica ? "active" : ""}`}
-        onClick={() => setPrecisaBagTermica((v) => !v)}
+        key={valor}
+        className={`qtyBtn ${bagTermicaModo === valor ? "active" : ""}`}
+        onClick={()=>setBagTermicaModo(valor)}
       >
-        Precisa bag térmica
+        {texto}
       </button>
+    ))}
+  </div>
+</div>
 
+<div>
+  <p className="muted">{t.orderSize}</p>
+
+  <div className="qtyRow">
+    {([
+      ["pequeno",t.smallOrder],
+      ["medio",t.mediumOrder],
+      ["grande",t.largeOrder],
+      ["muito_grande",t.veryLargeOrder]
+    ] as const).map(([valor,texto])=>(
       <button
         type="button"
-        className={`qtyBtn ${fragil ? "active" : ""}`}
-        onClick={() => setFragil((v) => !v)}
+        key={valor}
+        className={`qtyBtn ${tamanhoPedido === valor ? "active" : ""}`}
+        onClick={()=>setTamanhoPedido(valor)}
       >
-        Frágil
+        {texto}
       </button>
-    </div>
+    ))}
+  </div>
+</div>
+
+<div className="qtyRow">
+  <button
+    type="button"
+    className={`qtyBtn ${fragil ? "active" : ""}`}
+    onClick={() => setFragil((v) => !v)}
+  >
+   {t.fragile}
+  </button>
+</div>
   </>
 )}
 
 <label>
   {tipo === "entrega"
     ? subtipoEntrega === "restaurante"
-      ? "Resumo do pedido"
-      : "Objeto para entrega"
+      ? t.orderSummary
+      : t.deliveryObject
     : tipo === "carona_oferecida"
-      ? "Motorista / veiculo"
-      : "Nome do passageiro"}
+      ? t.placeholderDriverVehicle.replace("Example: ","").replace("Ex: ","")
+      : t.restaurantCustomer}
 
   <input
     value={tipo === "entrega" ? descricaoObjeto : nomePassageiro}
@@ -1127,21 +1205,21 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
       else setNomePassageiro(e.target.value);
     }}
     placeholder={
-      tipo === "entrega"
-        ? subtipoEntrega === "restaurante"
-          ? "Ex: Pedido 243 - 2 hambúrgueres e 1 refrigerante"
-          : "Ex: Caixa media, 10kg"
-        : tipo === "carona_oferecida"
-          ? "Ex: Carlos - Sedan prata"
-          : "Ex: John Smith"
-    }
+  tipo === "entrega"
+    ? subtipoEntrega === "restaurante"
+      ? t.placeholderRestaurantOrder
+      : t.placeholderDeliveryObject
+    : tipo === "carona_oferecida"
+      ? t.placeholderDriverVehicle
+      : t.placeholderPassengerName
+}
     required
   />
 </label>
 
         {tipo === "carona_oferecida" && perfilVeiculos.length > 0 && (
           <div>
-            <p className="muted">Veiculos salvos no perfil</p>
+            <p className="muted">{t.vehicleSaved}</p>
             <div className="chipGroup">
               {perfilVeiculos.map((item, index) => {
                 const ativo = veiculoPerfilSelecionado === index;
@@ -1167,7 +1245,7 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
           {tipo !== "entrega" &&
  (tipo === "carona_oferecida" || (tipo === "carona_solicitada" && opcoesCaronaVisiveis)) && (
   <div>
-    <p className="muted">Modo da viagem</p>
+   <p className="muted">{t.tripMode}</p>
 
     <div className="qtyRow">
       <button
@@ -1182,7 +1260,7 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
     void calcularPrecoAntesDoValorWeb();
   }}
 >
-  Compartilhada
+  {t.sharedTrip}
 </button>
 
      <button
@@ -1197,14 +1275,14 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
     void calcularPrecoAntesDoValorWeb();
   }}
 >
-  Exclusiva
+ {t.exclusiveTrip}
 </button>
     </div>
 
     <p className="muted">
   {modoPreco === "compartilhado"
-    ? "💺 Menor custo, podendo dividir a viagem."
-    : "🚗 Viagem só para você."}
+  ? t.sharedTripDescription
+  : t.exclusiveTripDescription}
 </p>
   </div>
 )}
@@ -1227,7 +1305,9 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
 
         {tipo !== "entrega" && modoPreco !== "direto" && (
   <div>
-    <p className="muted">{tipo === "carona_oferecida" ? "Vagas disponiveis" : "Quantidade de pessoas"}</p>
+    <p className="muted">
+  {tipo === "carona_oferecida" ? t.availableSeatsLabel : t.peopleQuantity}
+</p>
     <div className="qtyRow">
               {[1, 2, 3, 4].map((q) => (
                 <button type="button" key={q} className={`qtyBtn ${quantidadePessoas === q ? "active" : ""}`} onClick={() => setQuantidadePessoas(q)}>{q}</button>
@@ -1236,39 +1316,39 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
           </div>
         )}
         {tipo !== "entrega" && modoPreco !== "direto" && (
-  <div>
-    <p className="muted">Bagagem</p>
+ <div>
+  <p className="muted">{t.baggage}</p>
 
-    <div className="qtyRow">
-     {([
-  ["sem_bagagem","Sem bagagem"],
-  ["mochila","Mochila"],
-  ["mala_pequena","Mala pequena"],
-  ["mala_media","Mala média"],
-  ["mala_grande","Mala grande"]
+  <div className="qtyRow">
+    {([
+  ["sem_bagagem",t.noBaggage],
+  ["mochila",t.backpack],
+  ["mala_pequena",t.smallBag],
+  ["mala_media",t.mediumBag],
+  ["mala_grande",t.largeBag]
 ] as const).map(([valor,texto])=>(
-  <button
-    type="button"
-    key={valor}
-    className={`qtyBtn ${tipoBagagem===valor ? "active" : ""}`}
-    onClick={()=>setTipoBagagem(valor)}
-  >
-    {texto}
-  </button>
-))}
-    </div>
+      <button
+        type="button"
+        key={valor}
+        className={`qtyBtn ${tipoBagagem===valor ? "active" : ""}`}
+        onClick={()=>setTipoBagagem(valor)}
+      >
+        {texto}
+      </button>
+    ))}
   </div>
+</div>
 )}
 {tipo === "entrega" && (
   <div>
-    <p className="muted">Volume da entrega</p>
+    <p className="muted">{t.deliveryVolume}</p>
 
     <div className="qtyRow">
       {([
-        ["caixa_pequena","Caixa pequena"],
-        ["caixa_media","Caixa média"],
-        ["caixa_grande","Caixa grande"],
-        ["volume_grande","Volume grande"]
+        ["caixa_pequena",t.deliverySmallBox],
+["caixa_media",t.deliveryMediumBox],
+["caixa_grande",t.deliveryLargeBox],
+["volume_grande",t.deliveryLargeVolume]
       ] as const).map(([valor,texto])=>(
         <button
           type="button"
@@ -1283,49 +1363,113 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
   </div>
 )}
         <div className="addrGrid">
-          <div>
-            <p className="muted">{tipo === "entrega" ? "Endereco de retirada" : tipo === "carona_oferecida" ? "Endereco de saida" : "Endereco de embarque"}</p>
-            <input value={ruaOrigem} onChange={(e) => setRuaOrigem(e.target.value)} placeholder="Rua" required />
-            <input value={numeroOrigem} onChange={(e) => setNumeroOrigem(e.target.value)} placeholder="Numero" />
-            <input value={bairroOrigem} onChange={(e) => setBairroOrigem(e.target.value)} placeholder="Bairro" />
-            <div className="miniCols">
-              <input value={cidadeOrigem} onChange={(e) => setCidadeOrigem(e.target.value)} placeholder="Cidade" />
-              <input value={estadoOrigem} onChange={(e) => setEstadoOrigem(e.target.value)} placeholder="UF" />
-            </div>
-          </div>
+  <div>
+    <p className="muted">
+      {tipo === "entrega"
+        ? t.pickupAddress
+        : tipo === "carona_oferecida"
+          ? t.departureAddress
+          : t.boardingAddress}
+    </p>
 
-          <div>
-            <p className="muted">{tipo === "entrega" ? "Endereco de entrega" : tipo === "carona_solicitada" ? "Endereco de desembarque" : "Endereco de destino"}</p>
-            <input value={ruaDestino} onChange={(e) => setRuaDestino(e.target.value)} placeholder="Rua" required />
-            <input value={numeroDestino} onChange={(e) => setNumeroDestino(e.target.value)} placeholder="Numero" />
-            <input value={bairroDestino} onChange={(e) => setBairroDestino(e.target.value)} placeholder="Bairro" />
-            <div className="miniCols">
-              <input value={cidadeDestino} onChange={(e) => setCidadeDestino(e.target.value)} placeholder="Cidade" />
-              <input value={estadoDestino} onChange={(e) => setEstadoDestino(e.target.value)} placeholder="UF" />
-            </div>
-          </div>
-        </div>
+    <input
+      value={ruaOrigem}
+      onChange={(e) => setRuaOrigem(e.target.value)}
+      placeholder={t.placeholderStreet}
+      required
+    />
+
+    <input
+      value={numeroOrigem}
+      onChange={(e) => setNumeroOrigem(e.target.value)}
+      placeholder={t.placeholderNumber}
+    />
+
+    <input
+      value={bairroOrigem}
+      onChange={(e) => setBairroOrigem(e.target.value)}
+      placeholder={t.placeholderDistrict}
+    />
+
+    <div className="miniCols">
+      <input
+        value={cidadeOrigem}
+        onChange={(e) => setCidadeOrigem(e.target.value)}
+        placeholder={t.placeholderCity}
+      />
+
+      <input
+        value={estadoOrigem}
+        onChange={(e) => setEstadoOrigem(e.target.value)}
+        placeholder={t.placeholderState}
+      />
+    </div>
+  </div>
+
+  <div>
+    <p className="muted">
+      {tipo === "entrega"
+        ? t.deliveryAddress
+        : tipo === "carona_solicitada"
+          ? t.dropoffAddress
+          : t.destinationAddress}
+    </p>
+
+    <input
+      value={ruaDestino}
+      onChange={(e) => setRuaDestino(e.target.value)}
+      placeholder={t.placeholderStreet}
+      required
+    />
+
+    <input
+      value={numeroDestino}
+      onChange={(e) => setNumeroDestino(e.target.value)}
+      placeholder={t.placeholderNumber}
+    />
+
+    <input
+      value={bairroDestino}
+      onChange={(e) => setBairroDestino(e.target.value)}
+      placeholder={t.placeholderDistrict}
+    />
+
+    <div className="miniCols">
+      <input
+        value={cidadeDestino}
+        onChange={(e) => setCidadeDestino(e.target.value)}
+        placeholder={t.placeholderCity}
+      />
+
+      <input
+        value={estadoDestino}
+        onChange={(e) => setEstadoDestino(e.target.value)}
+        placeholder={t.placeholderState}
+      />
+    </div>
+  </div>
+</div>
 
         <div className="miniCols">
           <label>
-            {labelDataHorario(tipo).data}
+            {labelDataHorario(tipo, t).data}
             <input value={dataSaida} onChange={(e) => setDataSaida(maskDateInput(e.target.value))} placeholder="DD/MM/AAAA" maxLength={10} />
           </label>
           <label>
-            {labelDataHorario(tipo).hora}
+            {labelDataHorario(tipo, t).hora}
             <input value={horarioSaida} onChange={(e) => setHorarioSaida(maskTimeInput(e.target.value))} placeholder="HH:MM" maxLength={5} />
           </label>
         </div>
 
         {tipo === "carona_oferecida" && (
           <div>
-            <p className="muted">Paradas intermediarias</p>
-            <p className="muted">Depois de definir saida e destino, adicione cidades ou bairros para parada.</p>
+           <p className="muted">{t.intermediateStops}</p>
+<p className="muted">{t.intermediateStopsDescription}</p>
             <div className="paradaRow">
               <input
                 value={paradaTexto}
                 onChange={(e) => setParadaTexto(e.target.value)}
-                placeholder="Ex: Betim, MG"
+                placeholder={t.placeholderStop}
                 disabled={!ruaOrigem.trim() || !ruaDestino.trim()}
               />
               <button
@@ -1339,14 +1483,14 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
                   setParadaTexto("");
                 }}
               >
-                Adicionar
+                {t.add}
               </button>
             </div>
             <div className="paradaList">
               {paradasSelecionadas.map((parada, index) => (
                 <div key={`${parada}-${index}`} className="paradaItem">
                   <span>{index + 1}. {parada}</span>
-                  <button type="button" className="ghost" onClick={() => setParadasSelecionadas((prev) => prev.filter((_, i) => i !== index))}>Remover</button>
+                  <button type="button" className="ghost" onClick={() => setParadasSelecionadas((prev) => prev.filter((_, i) => i !== index))}>{t.remove}</button>
                 </div>
               ))}
             </div>
@@ -1354,16 +1498,16 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
         )}
 
         <label>
-          {tipo === "entrega" ? "Observacoes da entrega (opcional)" : "Observacoes para passageiro (opcional)"}
-          <textarea
-            value={observacaoOpcional}
-            onChange={(e) => setObservacaoOpcional(String(e.target.value || "").slice(0, MAX_OBSERVACAO_CHARS))}
-            placeholder={tipo === "entrega" ? "Ex: Entregar na portaria, interfone apto 23, pacote fragil." : "Ex: Saio no horario, parada apenas em pontos da rota principal."}
-            rows={4}
-            maxLength={MAX_OBSERVACAO_CHARS}
-          />
-          <span className="muted">{observacaoOpcional.length}/{MAX_OBSERVACAO_CHARS}</span>
-        </label>
+  {tipo === "entrega" ? t.deliveryNotesOptional : t.passengerNotesOptional}
+  <textarea
+    value={observacaoOpcional}
+    onChange={(e) => setObservacaoOpcional(String(e.target.value || "").slice(0, MAX_OBSERVACAO_CHARS))}
+    placeholder={tipo === "entrega" ? t.placeholderDeliveryNotes : t.placeholderPassengerNotes}
+    rows={4}
+    maxLength={MAX_OBSERVACAO_CHARS}
+  />
+  <span className="muted">{observacaoOpcional.length}/{MAX_OBSERVACAO_CHARS}</span>
+</label>
 {valorSugerido > 0 && (
   <div
     style={{
@@ -1389,7 +1533,7 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
   </div>
 )}
         <label>
-          Valor oferecido (R$)
+          {t.offeredValue}
           <input
   value={valorOferta}
   onFocus={() => {
@@ -1408,7 +1552,7 @@ setOk(editarId ? "Alterações salvas com sucesso." : "Oferta criada com sucesso
         {ok && <p className="okLine">{ok}</p>}
 
         <button disabled={saving || !user} className="btnPrimary" type="submit">
-          {saving ? "Aguarde..." : editarId ? "Salvar alterações" : "Criar oferta"}
+          {saving ? t.wait : editarId ? t.saveChanges : t.createOffer}
         </button>
       </form>
 

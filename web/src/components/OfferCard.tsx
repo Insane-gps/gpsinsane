@@ -19,17 +19,67 @@ type OfferCardProps = {
   disabled?: boolean;
 };
 
-function labelTipo(oferta: Oferta): string {
-  if (oferta.tipo === "entrega") {
-    if ((oferta as any).subtipoEntrega === "restaurante") {
-      return "Entrega de restaurante";
-    }
-
-    return "Entrega";
+function labelTipo(
+  oferta: Oferta,
+  t: ReturnType<typeof useWebI18n>["t"]
+): string {
+  if (oferta.tipo === "carona_oferecida") {
+    return String((oferta as any).modoPreco || "").toLowerCase() === "direto"
+      ? t.exclusiveRide
+      : t.sharedRide;
   }
 
-  if (oferta.tipo === "carona_oferecida") return "Carona oferecida";
-  return "Carona solicitada";
+  if (oferta.tipo === "entrega") {
+    if ((oferta as any).subtipoEntrega === "restaurante") {
+      return t.deliveryRestaurant;
+    }
+
+   return t.deliveryObject;
+  }
+  return t.reserve;
+}
+
+function tituloEntregaRestaurante(
+  oferta: Oferta,
+  t: ReturnType<typeof useWebI18n>["t"]
+): string {
+  const tipo = String((oferta as any).tipoEstabelecimento || "").trim().toLowerCase();
+
+  if (tipo === "pizzaria") return t.pizzeriaDeliveryTitle;
+  if (tipo === "hamburgueria") return t.burgerDeliveryTitle;
+  if (tipo === "lanchonete") return t.snackBarDeliveryTitle;
+  if (tipo === "mercado") return t.marketDeliveryTitle;
+
+  return t.restaurantDeliveryTitle;
+}
+
+function labelTipoEstabelecimento(
+  oferta: Oferta,
+  t: ReturnType<typeof useWebI18n>["t"]
+): string {
+  const tipo = String((oferta as any).tipoEstabelecimento || "").trim().toLowerCase();
+
+  if (tipo === "pizzaria") return t.restaurantOptionPizza;
+  if (tipo === "hamburgueria") return t.restaurantOptionBurger;
+  if (tipo === "lanchonete") return t.restaurantOptionSnackBar;
+  if (tipo === "mercado") return t.restaurantOptionMarket;
+  if (tipo === "outro") return t.restaurantOptionOther;
+
+  return t.restaurantOptionRestaurant;
+}
+
+function labelTamanhoPedido(
+  oferta: Oferta,
+  t: ReturnType<typeof useWebI18n>["t"]
+): string {
+  const tamanho = String((oferta as any).tamanhoPedido || "").trim().toLowerCase();
+
+  if (tamanho === "pequeno") return t.smallOrder;
+  if (tamanho === "medio") return t.mediumOrder;
+  if (tamanho === "grande") return t.largeOrder;
+  if (tamanho === "muito_grande") return t.veryLargeOrder;
+
+  return t.restaurantOrder;
 }
 export function OfferCard({
   oferta,
@@ -109,13 +159,13 @@ export function OfferCard({
       }}
     >
       <header>
-        <span className="pill">{labelTipo(oferta)}</span>
+        <span className="pill">{labelTipo(oferta, t)}</span>
         <span className="muted">{oferta.status || "ativa"}</span>
       </header>
 
       <h3>
   {(oferta as any).subtipoEntrega === "restaurante"
-    ? `🍔 ${(oferta as any).nomeEstabelecimento || oferta.nomeOuDescricao || "Entrega de restaurante"}`
+    ? `🍔 ${(oferta as any).nomeEstabelecimento || oferta.nomeOuDescricao || tituloEntregaRestaurante(oferta, t)}`
     : oferta.nomeOuDescricao || t.offerNoDescription}
 </h3>
 
@@ -129,38 +179,50 @@ export function OfferCard({
     border: "1px solid rgba(249, 115, 22, 0.35)"
   }}>
     <p className="muted" style={{margin: 0}}>
-      <strong>Tipo:</strong>{" "}
-      {(oferta as any).tipoEstabelecimento || "Restaurante/Lanchonete"}
+      <strong>{t.restaurantType}:</strong>{" "}
+      {labelTipoEstabelecimento(oferta, t)}
     </p>
 
     {!!(oferta as any).nomeCliente && (
       <p className="muted" style={{margin: "4px 0 0"}}>
-        <strong>Cliente:</strong> {(oferta as any).nomeCliente}
+        <strong>{t.customer}:</strong> {(oferta as any).nomeCliente}
       </p>
     )}
 
-    {!!(oferta as any).precisaBagTermica && (
-      <p style={{color:"#facc15",fontSize:12,fontWeight:800,margin:"6px 0 0"}}>
-        🧊 Precisa bag térmica
-      </p>
-    )}
+   {String((oferta as any).bagTermicaModo || "") === "necessaria" && (
+  <p style={{color:"#facc15",fontSize:12,fontWeight:800,margin:"6px 0 0"}}>
+    🧊 {t.thermalBagRequired}
+  </p>
+)}
 
-    {!!(oferta as any).fragil && (
-      <p style={{color:"#fecaca",fontSize:12,fontWeight:800,margin:"6px 0 0"}}>
-        ⚠️ Pedido frágil
-      </p>
-    )}
+{String((oferta as any).bagTermicaModo || "") === "fornecida" && (
+  <p style={{color:"#22c55e",fontSize:12,fontWeight:800,margin:"6px 0 0"}}>
+    ✅ {t.bagProvidedByRestaurant}
+  </p>
+)}
+
+{!!(oferta as any).fragil && (
+  <p style={{color:"#fecaca",fontSize:12,fontWeight:800,margin:"6px 0 0"}}>
+    ⚠️ {t.fragileOrder}
+  </p>
+)}
+
+{!!(oferta as any).tamanhoPedido && (
+  <p style={{color:"#93c5fd",fontSize:12,fontWeight:800,margin:"6px 0 0"}}>
+    📦 {labelTamanhoPedido(oferta, t)}
+  </p>
+)}
   </div>
 )}
       {String((oferta as any)?.modoPreco || "").toLowerCase() === "direto" &&
   Number((oferta as any)?.prioridadeMotoristasAte || 0) > Date.now() && (
   <p style={{color:"#facc15",fontSize:12,fontWeight:800,marginTop:4}}>
-    ⭐ Prioridade para motoristas na mesma direção
+    ⭐ {t.priorityDrivers}
   </p>
 )}
 
 <p className="muted" style={{marginTop:4,marginBottom:8}}>
-  Criado por: {oferta.criadorNome || (oferta as any).criadorEmail || oferta.criadorId || "Usuário"}
+  {t.createdBy}: {oferta.criadorNome || (oferta as any).criadorEmail || oferta.criadorId || t.profileTitle}
 </p>
 
       <p className="routeLine">
@@ -173,22 +235,22 @@ export function OfferCard({
 
       <div className="metaGrid">
         <span>
-          <strong>{minhaReservaAtiva ? "Valor reservado" : "Valor"}:</strong>{" "}
+          <strong>{minhaReservaAtiva ? t.reservedValue : t.valueLabel}:</strong>{" "}
           {valorPorPessoa > 0
             ? minhaReservaAtiva
               ? `R$ ${valorTotalMinhaReserva.toFixed(2)}`
               : `R$ ${valorTotalSelecionado.toFixed(2)}`
-            : "A combinar"}
+            : t.toBeArranged}
         </span>
 
         <span><strong>{t.offerSeats}:</strong> {oferta.quantidadePessoas || 0}</span>
-        <span><strong>Vagas disponíveis:</strong> {vagasDisponiveis} de {oferta.quantidadePessoas || 0}</span>
-        <span><strong>Vagas reservadas:</strong> {vagasReservadas}</span>
+        <span><strong>{t.availableSeats}:</strong> {vagasDisponiveis}/{oferta.quantidadePessoas || 0}</span>
+        <span><strong>{t.reservedSeats}:</strong> {vagasReservadas}</span>
       </div>
 
       {oferta.tipo === "carona_oferecida" && vagasDisponiveis > 0 && !ofertaCriadaPorMim && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-          <strong>Reservar:</strong>
+          <strong>{t.reserve}:</strong>
 
           {[1, 2, 3, 4].map((qtd) => {
             const disponivel = qtd <= vagasDisponiveis;

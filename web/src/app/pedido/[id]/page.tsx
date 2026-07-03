@@ -1,5 +1,6 @@
 "use client";
 export const dynamic = "force-dynamic";
+import { useWebI18n } from "@/components/WebI18nProvider";
 import { db } from "@/lib/firebase";
 import type { Oferta } from "@/lib/types";
 import { doc, getDoc, setDoc } from "firebase/firestore";
@@ -33,6 +34,7 @@ function statusLinha(ativo:boolean, texto:string, icone:string){
 }
 
 export default function PedidoClientePage(){
+  const { t } = useWebI18n();
   const params = useParams();
   const searchParams = useSearchParams();
 
@@ -59,14 +61,14 @@ const [enviado,setEnviado] = useState(false);
 
       try{
         if(!id || !token){
-          setErro("Link inválido.");
+          setErro(t.linkInvalid);
           return;
         }
 
         const snap = await getDoc(doc(db,"ofertas",id));
 
         if(!snap.exists()){
-          setErro("Pedido não encontrado.");
+          setErro(t.orderNotFound);
           return;
         }
 
@@ -74,7 +76,7 @@ const [enviado,setEnviado] = useState(false);
         const tokenCorreto = String(dados?.clienteFinalLinkToken || "");
 
         if(!tokenCorreto || tokenCorreto !== token){
-          setErro("Link inválido ou expirado.");
+          setErro(t.linkInvalidOrExpired);
           return;
         }
 
@@ -83,7 +85,7 @@ const [enviado,setEnviado] = useState(false);
         }
       }catch(e){
         console.log("Erro ao carregar pedido:", e);
-        if(ativo) setErro("Não foi possível carregar o pedido.");
+        if(ativo) setErro(t.loadOrderError);
       }finally{
         if(ativo) setCarregando(false);
       }
@@ -92,7 +94,7 @@ const [enviado,setEnviado] = useState(false);
     carregar();
 
     return ()=>{ ativo = false; };
-  }, [id, token]);
+  }, [id, token, t]);
 
   const entregue =
     String(oferta?.status || "") === "finalizada" ||
@@ -106,15 +108,15 @@ const [enviado,setEnviado] = useState(false);
     aceito;
 
   const titulo = useMemo(()=>{
-    if(!oferta) return "Pedido";
+    if(!oferta) return t.orderSummary;
     return String((oferta as any).nomeEstabelecimento || "INSANE GPS");
-  }, [oferta]);
+  }, [oferta, t.orderSummary]);
 
   async function enviarAvaliacao(){
     if(!oferta) return;
 
     if(notaEntregador <= 0 || notaEstabelecimento <= 0){
-      alert("Dê uma nota para o entregador e para o estabelecimento.");
+      alert(t.rateDriverAndStore);
       return;
     }
 
@@ -167,7 +169,7 @@ clienteFinalVoltariaComprar:voltariaComprar
       setEnviado(true);
     }catch(e){
       console.log("Erro ao enviar avaliação:", e);
-      alert("Não foi possível enviar sua avaliação agora.");
+      alert(t.sendReviewError);
     }finally{
       setEnviando(false);
     }
@@ -177,7 +179,7 @@ clienteFinalVoltariaComprar:voltariaComprar
     return (
       <section className="pedidoPage">
         <div className="pedidoBox">
-          <h1>Carregando pedido...</h1>
+          <h1>{t.loadingOrder}</h1>
         </div>
       </section>
     );
@@ -187,7 +189,7 @@ clienteFinalVoltariaComprar:voltariaComprar
     return (
       <section className="pedidoPage">
         <div className="pedidoBox">
-          <h1>Pedido indisponível</h1>
+          <h1>{t.orderUnavailable}</h1>
           <p>{erro}</p>
         </div>
       </section>
@@ -202,83 +204,83 @@ clienteFinalVoltariaComprar:voltariaComprar
         <div>
           <span className="pedidoKicker">INSANE GPS DELIVERY</span>
           <h1>🍽 {titulo}</h1>
-          <p>Seu pedido está sendo acompanhado pelo INSANE GPS.</p>
+          <p>{t.orderTrackedDescription}</p>
         </div>
 
         <div className={entregue ? "pedidoBadge entregue" : "pedidoBadge"}>
-          {entregue ? "Entregue" : "Em entrega"}
+          {entregue ? t.deliveredStatus : t.inDeliveryStatus}
         </div>
       </div>
 
       <div className="pedidoGrid">
         <div className="pedidoBox">
-          <h2>Pedido</h2>
+          <h2>{t.orderSummary}</h2>
 
           <div className="pedidoResumo">
-            <strong>{oferta.nomeOuDescricao || "Pedido"}</strong>
-            <span>{(oferta as any).tipoEstabelecimento || "Restaurante"}</span>
+            <strong>{oferta.nomeOuDescricao || t.orderSummary}</strong>
+            <span>{(oferta as any).tipoEstabelecimento || t.deliveryRestaurant}</span>
           </div>
 
-          <p><b>Cliente:</b> {(oferta as any).nomeCliente || "Cliente"}</p>
-          <p><b>Telefone:</b> {(oferta as any).telefoneCliente || "Não informado"}</p>
-          <p><b>Destino:</b> {oferta.destino?.endereco || "Endereço não informado"}</p>
-          <p><b>Valor:</b> {Number(oferta.valor || 0) > 0 ? `R$ ${Number(oferta.valor).toFixed(2)}` : "A combinar"}</p>
+          <p><b>{t.customer}:</b> {(oferta as any).nomeCliente || t.customer}</p>
+          <p><b>{t.restaurantPhone}:</b> {(oferta as any).telefoneCliente || t.notInformed}</p>
+          <p><b>{t.offerDestination}:</b> {oferta.destino?.endereco || t.addressNotProvided}</p>
+          <p><b>{t.valueLabel}:</b> {Number(oferta.valor || 0) > 0 ? `R$ ${Number(oferta.valor).toFixed(2)}` : t.toBeArranged}</p>
         </div>
 
         <div className="pedidoBox">
-          <h2>Status</h2>
+          <h2>{t.statusLabel}</h2>
 
           <div className="pedidoStatusLista">
-            {statusLinha(true,"Pedido criado","✅")}
-            {statusLinha(aceito || emAndamento || entregue,"Entregador aceitou","🏍️")}
-            {statusLinha(emAndamento || entregue,"Saiu para entrega","🚗")}
-            {statusLinha(entregue,"Pedido entregue","🎉")}
+            {statusLinha(true,t.orderCreatedStatus,"✅")}
+            {statusLinha(aceito || emAndamento || entregue,t.driverAcceptedStatus,"🏍️")}
+            {statusLinha(emAndamento || entregue,t.outForDeliveryStatus,"🚗")}
+            {statusLinha(entregue,t.orderDeliveredStatus,"🎉")}
           </div>
         </div>
       </div>
         <div className="pedidoBox">
-  <h2>Seu entregador</h2>
+  <h2>{t.yourDriver}</h2>
 
   <div className="pedidoEntregador">
     <img
       src={String((oferta as any).entregadorFoto || "").trim() || "/avatar.png"}
       className="pedidoAvatar"
-      alt="Entregador"
+      alt={t.driver}
     />
 
     <div>
-      <strong>{(oferta as any).entregadorNome || "Entregador"}</strong>
-      <p>{(oferta as any).entregadorVeiculo || "Veículo não informado"}</p>
+      <strong>{(oferta as any).entregadorNome || t.driver}</strong>
+      <p>{(oferta as any).entregadorVeiculo || t.vehicleNotProvided}</p>
       <p>⭐ {Number((oferta as any).entregadorNotaMedia || 0).toFixed(1)}</p>
     </div>
   </div>
 </div>
       {!entregue && (
         <div className="pedidoCodigoBox">
-          <h2>Código da entrega</h2>
+          <h2>{t.deliveryCode}</h2>
 
           <div className="pedidoCodigo">
             {String((oferta as any).codigoEntrega || "----")}
           </div>
 
           <p>
-            Informe este código somente quando receber o pedido.
+            {t.receiveCodeInstruction}
           </p>
         </div>
       )}
 
       {entregue && !enviado && (
         <div className="pedidoBox">
-          <h2>Avalie sua entrega</h2>
+          <h2>{t.rateDriverAndStore}</h2>
 
-          <label>Como foi o entregador?</label>
+          <label>{t.driverRating}</label>
           {estrelas(notaEntregador,setNotaEntregador)}
 
-          <label>Como foi o estabelecimento?</label>
+          <label>{t.restaurantRating}</label>
           {estrelas(notaEstabelecimento,setNotaEstabelecimento)}
 
           <div style={{marginTop:14,marginBottom:10}}>
-  <label>Você voltaria a comprar neste estabelecimento?</label>
+  <label>{t.reviewWouldBuyAgain}</label>
 
   <div style={{display:"flex",gap:10,marginTop:8}}>
     <button
@@ -286,7 +288,7 @@ clienteFinalVoltariaComprar:voltariaComprar
       onClick={()=>setVoltariaComprar("sim")}
       className={voltariaComprar === "sim" ? "pedidoBtnOpcao ativo" : "pedidoBtnOpcao"}
     >
-      Sim
+      {t.answerYes}
     </button>
 
     <button
@@ -294,7 +296,7 @@ clienteFinalVoltariaComprar:voltariaComprar
       onClick={()=>setVoltariaComprar("nao")}
       className={voltariaComprar === "nao" ? "pedidoBtnOpcao ativo" : "pedidoBtnOpcao"}
     >
-      Não
+      {t.answerNo}
     </button>
   </div>
 </div>
@@ -302,7 +304,7 @@ clienteFinalVoltariaComprar:voltariaComprar
 <textarea
   value={comentario}
   onChange={(e)=>setComentario(e.target.value)}
-  placeholder="Comentário opcional"
+  placeholder={t.optionalCommentLabel}
   className="pedidoTextarea"
 />
 
@@ -311,7 +313,7 @@ clienteFinalVoltariaComprar:voltariaComprar
             disabled={enviando}
             onClick={enviarAvaliacao}
           >
-            {enviando ? "Enviando..." : "Enviar avaliação"}
+            {enviando ? `${t.wait}...` : t.sendReview}
           </button>
         </div>
       )}

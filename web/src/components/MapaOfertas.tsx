@@ -41,17 +41,47 @@ function extrairPonto(oferta: Oferta): Coordenadas | null {
 }
 
 function labelTipo(oferta: Oferta, t: ReturnType<typeof useWebI18n>["t"]): string {
-  if (oferta.tipo === "carona_oferecida") return t.mapLegendRide;
+  if (oferta.tipo === "carona_oferecida") {
+    return String((oferta as any).modoPreco || "").toLowerCase() === "direto"
+      ? t.exclusiveRide
+      : t.mapLegendRide;
+  }
 
   if (oferta.tipo === "entrega") {
     if ((oferta as any).subtipoEntrega === "restaurante") {
-      return "Entrega de restaurante";
+      return t.restaurantDeliveryTitle;
     }
 
     return t.mapLegendDelivery;
   }
 
   return t.mapLegendRequest;
+}
+
+function tituloOfertaMapa(oferta: Oferta, t: ReturnType<typeof useWebI18n>["t"]) {
+  if ((oferta as any).subtipoEntrega !== "restaurante") {
+    return oferta.nomeOuDescricao || t.offerNoDescription;
+  }
+
+  const tipo = String((oferta as any).tipoEstabelecimento || "").trim().toLowerCase();
+
+  if (tipo === "pizzaria") {
+    return `🍕 ${(oferta as any).nomeEstabelecimento || oferta.nomeOuDescricao || t.pizzeriaDeliveryTitle}`;
+  }
+
+  if (tipo === "hamburgueria") {
+    return `🍔 ${(oferta as any).nomeEstabelecimento || oferta.nomeOuDescricao || t.burgerDeliveryTitle}`;
+  }
+
+  if (tipo === "lanchonete") {
+    return `🥤 ${(oferta as any).nomeEstabelecimento || oferta.nomeOuDescricao || t.snackBarDeliveryTitle}`;
+  }
+
+  if (tipo === "mercado") {
+    return `🛒 ${(oferta as any).nomeEstabelecimento || oferta.nomeOuDescricao || t.marketDeliveryTitle}`;
+  }
+
+  return `🍽 ${(oferta as any).nomeEstabelecimento || oferta.nomeOuDescricao || t.restaurantDeliveryTitle}`;
 }
 
 function markerIcon(oferta: Oferta, ativo: boolean) {
@@ -162,9 +192,7 @@ export function MapaOfertas({ ofertas, ofertaSelecionadaId, onSelecionarOferta, 
       marker.bindPopup(`
   <div class="mapPopup">
     <strong>${
-      (oferta as any).subtipoEntrega === "restaurante"
-        ? `🍔 ${(oferta as any).nomeEstabelecimento || oferta.nomeOuDescricao || "Entrega de restaurante"}`
-        : oferta.nomeOuDescricao || t.offerNoDescription
+      tituloOfertaMapa(oferta, t)
     }</strong>
     <span>${labelTipo(oferta, t)}</span>
     <span>${oferta.origem?.endereco || oferta.destino?.endereco || t.mapNoCoords}</span>

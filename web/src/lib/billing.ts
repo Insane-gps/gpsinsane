@@ -22,6 +22,8 @@ type PagamentoMercadoPago = {
   currency_id?: string;
 };
 
+const BILLING_CURRENCY_ID = "BRL";
+
 function requireEnv(name: string): string {
   const value = String(process.env[name] || "").trim();
   if (!value) throw new Error(`Variavel de ambiente obrigatoria ausente: ${name}`);
@@ -87,7 +89,7 @@ export async function criarCheckoutMercadoPago(input: {
           title: planoToTitle(plano),
           quantity: 1,
           unit_price: planoToPrice(plano),
-          currency_id: "BRL",
+          currency_id: BILLING_CURRENCY_ID,
         },
       ],
       back_urls: {
