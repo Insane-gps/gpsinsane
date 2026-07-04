@@ -19,9 +19,100 @@ const MapaOfertas = dynamic(() => import("@/components/MapaOfertas").then((mod) 
 
 type MarketplacePanelProps = {
   filtroTipo?: TipoOferta | null;
+  ocultarVencidas?: boolean;
 };
 
-        export function MarketplacePanel({ filtroTipo = null }: MarketplacePanelProps) {
+function inicioDoDiaAtualMsWeb() {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  return hoje.getTime();
+}
+
+function normalizarDataOfertaParaMsWeb(valor:any): number {
+  if (typeof valor === "number" && Number.isFinite(valor)) return valor;
+  if (valor instanceof Date) {
+    const ms = Number(valor.getTime());
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  if (valor && typeof valor?.toMillis === "function") {
+    const ms = Number(valor.toMillis());
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  if (valor && typeof valor?.seconds === "number") {
+    return Number(valor.seconds) * 1000;
+  }
+
+  const texto = String(valor || "").trim();
+  if (!texto) return 0;
+
+  const br = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (br) {
+    const dia = Number(br[1]);
+    const mes = Number(br[2]) - 1;
+    const ano = Number(br[3]);
+    const ms = new Date(ano, mes, dia, 0, 0, 0, 0).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  const isoDate = texto.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDate) {
+    const ano = Number(isoDate[1]);
+    const mes = Number(isoDate[2]) - 1;
+    const dia = Number(isoDate[3]);
+    const ms = new Date(ano, mes, dia, 0, 0, 0, 0).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  const parsed = Date.parse(texto);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function ofertaVencidaNaLeituraWeb(oferta:any): boolean {
+  const status = String(oferta?.status || "").trim().toLowerCase();
+  if (status === "finalizada" || status === "cancelada" || status === "expirada") {
+    return true;
+  }
+
+  const tipo = String(oferta?.tipo || "").trim().toLowerCase();
+  if (tipo.includes("carona")) {
+    const vagasDisponiveisCampo = Number(oferta?.vagasDisponiveis);
+    if (Number.isFinite(vagasDisponiveisCampo) && vagasDisponiveisCampo <= 0) return true;
+
+    const total = Number(oferta?.quantidadePessoas || 0);
+    if (Number.isFinite(total) && total > 0) {
+      const reservasAtivas = Array.isArray(oferta?.reservas)
+        ? oferta.reservas.filter((r:any) => String(r?.status || "").toLowerCase() !== "cancelada")
+        : [];
+
+      const reservadas = reservasAtivas.reduce((acc:number, r:any) => {
+        return acc + Math.max(0, Number(r?.quantidade || 1));
+      }, 0);
+
+      if ((total - reservadas) <= 0) return true;
+    }
+  }
+
+  const inicioHoje = inicioDoDiaAtualMsWeb();
+  const camposData = [
+    oferta?.dataCombinada,
+    oferta?.dataSaida,
+    oferta?.dataEntrega,
+    oferta?.dataHora,
+    oferta?.dataServico,
+    oferta?.dataCriada,
+  ];
+
+  return camposData.some((campo) => {
+    const ms = normalizarDataOfertaParaMsWeb(campo);
+    if (!ms) return false;
+
+    const data = new Date(ms);
+    data.setHours(0, 0, 0, 0);
+    return data.getTime() < inicioHoje;
+  });
+}
+
+        export function MarketplacePanel({ filtroTipo = null, ocultarVencidas = true }: MarketplacePanelProps) {
   const router = useRouter();
   const { t } = useWebI18n();
   const { user, loading } = useAuth();
@@ -59,9 +150,13 @@ type MarketplacePanelProps = {
       snap.forEach((item) => {
         next.push({ id: item.id, ...(item.data() as Omit<Oferta, "id">) });
       });
-      setOfertas(next);
+      const listaLeitura = ocultarVencidas
+        ? next.filter((item:any) => !ofertaVencidaNaLeituraWeb(item))
+        : next;
+
+      setOfertas(listaLeitura);
     });
-  }, []);
+  }, [ocultarVencidas]);
  function vagasReservadasOferta(oferta: Oferta) {
   const reservasAtivas = Array.isArray(oferta.reservas)
     ? oferta.reservas.filter((reserva:any) => String(reserva?.status || "") !== "cancelada")

@@ -9,7 +9,7 @@ function ProcurarPageContent() {
   const searchParams = useSearchParams();
   const tipo = searchParams.get("tipo") as TipoOferta | null;
 
-  return <MarketplacePanel filtroTipo={tipo} />;
+  return <MarketplacePanel filtroTipo={tipo} ocultarVencidas />;
 }
 
 export default function ProcurarPage() {
