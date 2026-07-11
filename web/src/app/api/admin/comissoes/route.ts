@@ -112,11 +112,49 @@ export async function GET(request: Request) {
     if (!validacao.ok) return validacao.response;
 
     const db = getAdminDb();
-    const snap = await db.collection("comissoes").orderBy("criadoEmCliente", "desc").get();
+    const snap = await db.collection("comissoes").get();
+
+    if (snap.empty) {
+      return NextResponse.json({ ok: true, comissoes: [] });
+    }
+
+    const toMillis = (value: unknown): number => {
+      if (!value) return 0;
+      if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+      if (typeof value === "string") {
+        const parsed = Date.parse(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+      }
+
+      const anyValue = value as { toMillis?: () => number; seconds?: number };
+      if (typeof anyValue.toMillis === "function") {
+        const ms = Number(anyValue.toMillis() || 0);
+        return Number.isFinite(ms) ? ms : 0;
+      }
+
+      if (typeof anyValue.seconds === "number") {
+        const ms = Number(anyValue.seconds) * 1000;
+        return Number.isFinite(ms) ? ms : 0;
+      }
+
+      return 0;
+    };
+
+    const getSortValue = (item: Record<string, unknown>) => {
+      return (
+        toMillis(item.criadoEmCliente) ||
+        toMillis(item.criadoEm) ||
+        toMillis(item.createdAt) ||
+        0
+      );
+    };
+
     const comissoes = snap.docs.map((docAtual) => ({
       id: docAtual.id,
       ...(docAtual.data() || {}),
-    }));
+    })) as Array<Record<string, unknown>>;
+
+    comissoes.sort((a, b) => getSortValue(b) - getSortValue(a));
 
     return NextResponse.json({ ok: true, comissoes });
   } catch (error) {

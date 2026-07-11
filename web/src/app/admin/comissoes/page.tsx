@@ -44,7 +44,7 @@ export default function AdminComissoesPage() {
   async function obterToken() {
     const user = auth.currentUser;
     if (!user) throw new Error("user_not_authenticated");
-    return user.getIdToken();
+    return user.getIdToken(true);
   }
 
   useEffect(() => {
