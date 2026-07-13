@@ -5,6 +5,8 @@ type DecodedToken = {
   uid?: string;
 };
 
+type UsuarioData = Record<string, unknown>;
+
 function parseBearerToken(request: Request) {
   const authHeader = String(request.headers.get("authorization") || "");
   return authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
@@ -69,6 +71,44 @@ function asMoney(value: unknown): number {
   return Number(n.toFixed(2));
 }
 
+function normalizeBaseName(value: unknown): string {
+  const raw = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
+
+  return raw.slice(0, 18) || "usuario";
+}
+
+function randomSuffix(length = 6): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+
+  for (let index = 0; index < length; index += 1) {
+    result += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+
+  return result;
+}
+
+async function generateUniqueCodigoIndicacao(db: ReturnType<typeof getAdminDb>, usuario: UsuarioData) {
+  const baseName = normalizeBaseName(
+    usuario.nome || usuario.displayName || usuario.nomeCompleto || usuario.email || usuario.emailUsuario
+  );
+
+  for (let tentativa = 0; tentativa < 12; tentativa += 1) {
+    const codigo = `${baseName}_${randomSuffix(6)}`;
+    const conflito = await db.collection("usuarios").where("codigoIndicacao", "==", codigo).limit(1).get();
+    if (conflito.empty) {
+      return codigo;
+    }
+  }
+
+  return `${baseName}_${randomSuffix(8)}`;
+}
+
 export async function GET(request: Request) {
   try {
     const token = parseBearerToken(request);
@@ -90,21 +130,37 @@ export async function GET(request: Request) {
 
     const db = getAdminDb();
 
+    const usuarioRef = db.collection("usuarios").doc(uid);
     const [usuarioSnap, resumoSnap, comissoesSnap] = await Promise.all([
-      db.collection("usuarios").doc(uid).get(),
+      usuarioRef.get(),
       db.collection("comissoesResumo").doc(uid).get(),
       db.collection("comissoes").where("uidIndicador", "==", uid).get(),
     ]);
 
     const usuario = usuarioSnap.exists ? (usuarioSnap.data() || {}) : {};
-    const resumo = resumoSnap.exists ? (resumoSnap.data() || {}) : {};
 
-    const codigoIndicacao = String(
-      (usuario as Record<string, unknown>).codigoIndicacao ||
-      (usuario as Record<string, unknown>).codigoConvite ||
-      (usuario as Record<string, unknown>).codigoReferencia ||
+    let codigoIndicacao = String(
+      (usuario as UsuarioData).codigoIndicacao ||
+      (usuario as UsuarioData).codigoConvite ||
+      (usuario as UsuarioData).codigoReferencia ||
       ""
     ).trim();
+
+    if (!codigoIndicacao) {
+      codigoIndicacao = await generateUniqueCodigoIndicacao(db, usuario as UsuarioData);
+      await usuarioRef.set(
+        {
+          codigoIndicacao,
+          codigoIndicacaoGeradoEm: Date.now(),
+          codigoIndicacaoGeradoEmCliente: Date.now(),
+          atualizadoEm: Date.now(),
+          atualizadoEmCliente: Date.now(),
+        },
+        { merge: true },
+      );
+    }
+
+    const resumo = resumoSnap.exists ? (resumoSnap.data() || {}) : {};
 
     const linkIndicacao = codigoIndicacao
       ? `https://insanegps.com.br/convite/${encodeURIComponent(codigoIndicacao)}`

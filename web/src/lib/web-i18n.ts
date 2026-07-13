@@ -87,6 +87,8 @@ type WebTexts = {
   dadosPagamento: string;
   regraPlanoAtivo: string;
   regraPixMesmoTitular: string;
+  gerandoCodigoIndicacao: string;
+  erroGerarCodigoIndicacao: string;
   loginToReserve: string;
   loginToChat: string;
   reserveSuccess: string;
@@ -388,6 +390,8 @@ const TEXTS: Record<WebLang, WebTexts> = {
     dadosPagamento: "Cadastrar ou alterar dados de pagamento",
     regraPlanoAtivo: "Para receber comissoes, voce deve manter um plano PRO ou PREMIUM ativo.",
     regraPixMesmoTitular: "A chave PIX deve estar no nome do proprio titular da conta. Nao sao aceitas chaves de terceiros.",
+    gerandoCodigoIndicacao: "Gerando codigo de indicacao...",
+    erroGerarCodigoIndicacao: "Nao foi possivel gerar o codigo de indicacao agora.",
     loginToReserve: "Faca login para solicitar reserva.",
     loginToChat: "Faca login para enviar mensagens no chat.",
     reserveSuccess: "Reserva solicitada com sucesso.",
@@ -690,6 +694,8 @@ receiveCodeInstruction:"Informe este código somente quando receber o pedido.",
     dadosPagamento: "Register or update payment details",
     regraPlanoAtivo: "To receive commissions, you must keep an active PRO or PREMIUM plan.",
     regraPixMesmoTitular: "The PIX key must be in the account holder's own name. Third-party keys are not accepted.",
+    gerandoCodigoIndicacao: "Generating referral code...",
+    erroGerarCodigoIndicacao: "We could not generate the referral code right now.",
     loginToReserve: "Sign in to request booking.",
     loginToChat: "Sign in to send messages in chat.",
     reserveSuccess: "Booking requested successfully.",
@@ -993,6 +999,8 @@ receiveCodeInstruction:"Share this code only when you receive the order.",
     dadosPagamento: "Registrar o actualizar datos de pago",
     regraPlanoAtivo: "Para recibir comisiones, debes mantener un plan PRO o PREMIUM activo.",
     regraPixMesmoTitular: "La clave PIX debe estar a nombre del titular de la cuenta. No se aceptan claves de terceros.",
+    gerandoCodigoIndicacao: "Generando codigo de referencia...",
+    erroGerarCodigoIndicacao: "No fue posible generar el codigo de referencia ahora.",
     loginToReserve: "Inicia sesion para solicitar reserva.",
     loginToChat: "Inicia sesion para enviar mensajes en el chat.",
     reserveSuccess: "Reserva solicitada con exito.",
@@ -1298,6 +1306,8 @@ receiveCodeInstruction:"Comparte este código solo cuando recibas el pedido.",
     dadosPagamento: "Enregistrer ou modifier les donnees de paiement",
     regraPlanoAtivo: "Pour recevoir des commissions, vous devez conserver un plan PRO ou PREMIUM actif.",
     regraPixMesmoTitular: "La cle PIX doit etre au nom du titulaire du compte. Les cles de tiers ne sont pas acceptees.",
+    gerandoCodigoIndicacao: "Generation du code de parrainage...",
+    erroGerarCodigoIndicacao: "Impossible de generer le code de parrainage pour le moment.",
     loginToReserve: "Connectez-vous pour demander une reservation.",
     loginToChat: "Connectez-vous pour envoyer des messages dans le chat.",
     reserveSuccess: "Reservation demandee avec succes.",
@@ -1601,6 +1611,8 @@ receiveCodeInstruction:"Communiquez ce code uniquement lorsque vous recevez la c
     dadosPagamento: "Zahlungsdaten erfassen oder bearbeiten",
     regraPlanoAtivo: "Um Provisionen zu erhalten, musst du einen aktiven PRO- oder PREMIUM-Plan behalten.",
     regraPixMesmoTitular: "Der PIX-Schluessel muss auf den Namen des Kontoinhabers lauten. Schluessel Dritter werden nicht akzeptiert.",
+    gerandoCodigoIndicacao: "Empfehlungscode wird erstellt...",
+    erroGerarCodigoIndicacao: "Der Empfehlungscode konnte gerade nicht erstellt werden.",
     loginToReserve: "Melde dich an, um eine Reservierung anzufragen.",
     loginToChat: "Melde dich an, um Nachrichten im Chat zu senden.",
     reserveSuccess: "Reservierung erfolgreich angefragt.",

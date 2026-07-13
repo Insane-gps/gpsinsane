@@ -125,6 +125,7 @@ export function ProfilePanel() {
   const [confirmacaoExcluirVisivel, setConfirmacaoExcluirVisivel] = useState(false);
   const [divulgadorData, setDivulgadorData] = useState<DivulgadorData>(emptyDivulgadorData);
   const [carregandoDivulgador, setCarregandoDivulgador] = useState(false);
+  const [erroCodigoIndicacao, setErroCodigoIndicacao] = useState("");
 
   useEffect(() => {
     if (!user) return;
@@ -142,10 +143,12 @@ export function ProfilePanel() {
     async function carregarDivulgador() {
       if (!user) {
         setDivulgadorData(emptyDivulgadorData);
+        setErroCodigoIndicacao("");
         return;
       }
 
       setCarregandoDivulgador(true);
+      setErroCodigoIndicacao("");
       try {
         const token = await user.getIdToken();
         const response = await fetch("/api/divulgador/comissoes", {
@@ -157,6 +160,7 @@ export function ProfilePanel() {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
           setDivulgadorData(emptyDivulgadorData);
+          setErroCodigoIndicacao(t.erroGerarCodigoIndicacao);
           return;
         }
 
@@ -194,6 +198,7 @@ export function ProfilePanel() {
         });
       } catch {
         setDivulgadorData(emptyDivulgadorData);
+        setErroCodigoIndicacao(t.erroGerarCodigoIndicacao);
       } finally {
         setCarregandoDivulgador(false);
       }
@@ -202,10 +207,11 @@ export function ProfilePanel() {
     void carregarDivulgador();
   }, [user]);
 
-  const codigoIndicacao = divulgadorData.codigoIndicacao || "-";
+  const codigoIndicacao = divulgadorData.codigoIndicacao;
   const linkIndicacao = divulgadorData.linkIndicacao || (divulgadorData.codigoIndicacao
     ? `https://insanegps.com.br/convite/${encodeURIComponent(divulgadorData.codigoIndicacao)}`
     : "");
+  const codigoPronto = Boolean(divulgadorData.codigoIndicacao) && !carregandoDivulgador;
 
   async function copiarTexto(texto: string, mensagem: string) {
     if (!texto) return;
@@ -497,20 +503,23 @@ export function ProfilePanel() {
       <article className="referralCard">
         <header className="referralHead">
           <h2>{t.ganheDinheiroIndicando}</h2>
-          <span className="muted" style={{ fontSize: "0.9rem" }}>
-            {carregandoDivulgador ? "Carregando..." : `UID: ${user.uid}`}
-          </span>
         </header>
 
         <div className="referralCodes">
-          <p><strong>{t.meuCodigoIndicacao}:</strong> {codigoIndicacao}</p>
-          <p style={{ overflowWrap: "anywhere" }}><strong>{t.meuLinkIndicacao}:</strong> {linkIndicacao || "-"}</p>
+          {carregandoDivulgador ? (
+            <p className="muted" style={{ margin: 0 }}>{t.gerandoCodigoIndicacao}</p>
+          ) : (
+            <>
+              <p><strong>{t.meuCodigoIndicacao}:</strong> {codigoIndicacao}</p>
+              <p style={{ overflowWrap: "anywhere" }}><strong>{t.meuLinkIndicacao}:</strong> {linkIndicacao}</p>
+            </>
+          )}
         </div>
 
         <div className="referralActions">
-          <button type="button" className="ghost" onClick={() => void copiarTexto(codigoIndicacao, "Codigo copiado.")}>{t.copiarCodigo}</button>
-          <button type="button" className="ghost" onClick={() => void copiarTexto(linkIndicacao, "Link copiado.")}>{t.copiarLink}</button>
-          <button type="button" className="ghost" onClick={() => void compartilharConvite()}>{t.compartilharConvite}</button>
+          <button type="button" className="ghost" disabled={!codigoPronto} onClick={() => void copiarTexto(codigoIndicacao, "Codigo copiado.")}>{t.copiarCodigo}</button>
+          <button type="button" className="ghost" disabled={!codigoPronto} onClick={() => void copiarTexto(linkIndicacao, "Link copiado.")}>{t.copiarLink}</button>
+          <button type="button" className="ghost" disabled={!codigoPronto} onClick={() => void compartilharConvite()}>{t.compartilharConvite}</button>
           <button type="button" className="ghost" onClick={irParaHistorico}>{t.historicoComissoes}</button>
           <Link href="/dados-pagamento" className="btnSecondary" style={{ textAlign: "center" }}>
             {t.dadosPagamento}
@@ -531,11 +540,10 @@ export function ProfilePanel() {
         </div>
 
         <div className="noticeBlock" style={{ marginTop: "0.8rem" }}>
-          <p style={{ margin: 0 }}>
-            {t.dadosPagamento}: {divulgadorData.dadosPagamentoCadastrados ? "Cadastrados" : "Pendentes"}
-          </p>
+          <p style={{ margin: 0 }}>{t.dadosPagamento}: {divulgadorData.dadosPagamentoCadastrados ? "Cadastrados" : "Pendentes"}</p>
           <p style={{ margin: 0 }}>{t.regraPlanoAtivo}</p>
           <p style={{ margin: "0.5rem 0 0" }}>{t.regraPixMesmoTitular}</p>
+          {erroCodigoIndicacao && <p style={{ margin: "0.5rem 0 0", color: "#fecaca" }}>{erroCodigoIndicacao}</p>}
         </div>
 
         <div id="historico-comissoes" style={{ marginTop: "1rem" }}>
