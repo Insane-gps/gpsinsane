@@ -788,6 +788,75 @@ button:hover,
   margin-top: 0.7rem;
 }
 
+.referralCard {
+  margin: 1rem 0;
+  border: 1px solid rgba(78, 124, 206, 0.45);
+  border-radius: 15px;
+  padding: 0.95rem;
+  background:
+    linear-gradient(150deg, rgba(9, 18, 35, 0.9), rgba(10, 19, 37, 0.82)),
+    url("/fundos/perfil.jpeg");
+  background-size: cover;
+  background-position: center;
+}
+
+.referralHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.referralHead h2 {
+  margin: 0;
+  font-size: clamp(1.06rem, 1.8vw, 1.4rem);
+}
+
+.referralCodes p {
+  margin: 0.35rem 0;
+  color: #cde0ff;
+}
+
+.referralActions {
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.referralStatsGrid {
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.refStat {
+  border: 1px solid rgba(92, 140, 217, 0.38);
+  border-radius: 12px;
+  padding: 0.62rem;
+  background: rgba(8, 18, 33, 0.65);
+  display: grid;
+  gap: 0.24rem;
+}
+
+.refStat span {
+  color: #9db7e0;
+  font-size: 0.86rem;
+}
+
+.refStat strong {
+  color: #ecf5ff;
+}
+
+.noticeBlock {
+  border: 1px solid rgba(119, 157, 220, 0.42);
+  border-radius: 10px;
+  padding: 0.65rem;
+  color: #d5e8ff;
+  background: rgba(20, 39, 69, 0.5);
+}
+
 .tripCard p {
   margin: 0.26rem 0;
   color: #b7cdef;

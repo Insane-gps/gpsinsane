@@ -6,11 +6,18 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+const ADMIN_EMAILS = [
+  "ocimar0102@gmail.com",
+  "creatinglab1@gmail.com",
+].map((item) => item.toLowerCase());
+
 export function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
   const { t, lang, setLang, options } = useWebI18n();
+  const emailAtual = String(user?.email || "").trim().toLowerCase();
+  const isAdmin = ADMIN_EMAILS.includes(emailAtual);
 
   const links = [
     { href: "/procurar", label: t.procurar, active: pathname === "/procurar" || pathname === "/ofertas" || pathname === "/" },
@@ -37,6 +44,14 @@ export function TopNav() {
         {links.map((item) => (
           <Link key={item.href} href={item.href} className={item.active ? "active" : ""}>{item.label}</Link>
         ))}
+        {isAdmin && (
+          <Link
+            href="/admin/comissoes"
+            className={pathname === "/admin/comissoes" ? "active" : ""}
+          >
+            {t.painelFinanceiro}
+          </Link>
+        )}
       </nav>
 
       <div className="topActions">

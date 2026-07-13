@@ -32,6 +32,83 @@ const emptyProfile: ProfileData = {
   veiculos: [],
 };
 
+type ComissaoHistorico = {
+  id: string;
+  plano: "PRO" | "PREMIUM" | "-";
+  valorAssinatura: number;
+  percentual: number;
+  valorComissao: number;
+  status: string;
+  criadoEm: string | null;
+  liberadoEm: string | null;
+  indicadoRef: string;
+  pagamentoRef: string;
+};
+
+type DivulgadorResumo = {
+  indicados: number;
+  assinaturasAtivas: number;
+  comissaoPendente: number;
+  comissaoLiberada: number;
+  comissaoAprovada: number;
+  comissaoPaga: number;
+  comissaoCancelada: number;
+  comissaoBloqueadaPixInvalido: number;
+  comissaoExpiradaPorPlano: number;
+  comissaoExpiradaPorTempo: number;
+};
+
+type DivulgadorData = {
+  codigoIndicacao: string;
+  linkIndicacao: string;
+  resumo: DivulgadorResumo;
+  dadosPagamentoCadastrados: boolean;
+  historico: ComissaoHistorico[];
+};
+
+const emptyDivulgadorData: DivulgadorData = {
+  codigoIndicacao: "",
+  linkIndicacao: "",
+  resumo: {
+    indicados: 0,
+    assinaturasAtivas: 0,
+    comissaoPendente: 0,
+    comissaoLiberada: 0,
+    comissaoAprovada: 0,
+    comissaoPaga: 0,
+    comissaoCancelada: 0,
+    comissaoBloqueadaPixInvalido: 0,
+    comissaoExpiradaPorPlano: 0,
+    comissaoExpiradaPorTempo: 0,
+  },
+  dadosPagamentoCadastrados: false,
+  historico: [],
+};
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "-";
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return "-";
+  return new Date(ms).toLocaleString("pt-BR");
+}
+
+function statusLabel(status: string) {
+  const current = String(status || "").trim();
+  if (current === "pendente") return "Pendente";
+  if (current === "liberada") return "Liberada";
+  if (current === "aprovada") return "Aprovada";
+  if (current === "paga") return "Paga";
+  if (current === "cancelada") return "Cancelada";
+  if (current === "bloqueada_pix_invalido") return "PIX bloqueado";
+  if (current === "expirada_sem_pro" || current === "expirada_por_plano") return "Expirada por plano";
+  if (current === "expirada_por_tempo") return "Expirada por tempo";
+  return current || "-";
+}
+
 export function ProfilePanel() {
   const { t } = useWebI18n();
   const { user, loading } = useAuth();
@@ -46,6 +123,8 @@ export function ProfilePanel() {
   const [confirmacaoExcluir, setConfirmacaoExcluir] = useState("");
   const [excluindoConta, setExcluindoConta] = useState(false);
   const [confirmacaoExcluirVisivel, setConfirmacaoExcluirVisivel] = useState(false);
+  const [divulgadorData, setDivulgadorData] = useState<DivulgadorData>(emptyDivulgadorData);
+  const [carregandoDivulgador, setCarregandoDivulgador] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -58,6 +137,115 @@ export function ProfilePanel() {
       }
     }
   }, [user]);
+
+  useEffect(() => {
+    async function carregarDivulgador() {
+      if (!user) {
+        setDivulgadorData(emptyDivulgadorData);
+        return;
+      }
+
+      setCarregandoDivulgador(true);
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch("/api/divulgador/comissoes", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          setDivulgadorData(emptyDivulgadorData);
+          return;
+        }
+
+        const resumo = (payload?.resumo || {}) as Partial<DivulgadorResumo>;
+        const historico = Array.isArray(payload?.historico) ? payload.historico : [];
+
+        setDivulgadorData({
+          codigoIndicacao: String(payload?.codigoIndicacao || "").trim(),
+          linkIndicacao: String(payload?.linkIndicacao || "").trim(),
+          resumo: {
+            indicados: Number(resumo.indicados || 0),
+            assinaturasAtivas: Number(resumo.assinaturasAtivas || 0),
+            comissaoPendente: Number(resumo.comissaoPendente || 0),
+            comissaoLiberada: Number(resumo.comissaoLiberada || 0),
+            comissaoAprovada: Number(resumo.comissaoAprovada || 0),
+            comissaoPaga: Number(resumo.comissaoPaga || 0),
+            comissaoCancelada: Number(resumo.comissaoCancelada || 0),
+            comissaoBloqueadaPixInvalido: Number(resumo.comissaoBloqueadaPixInvalido || 0),
+            comissaoExpiradaPorPlano: Number(resumo.comissaoExpiradaPorPlano || 0),
+            comissaoExpiradaPorTempo: Number(resumo.comissaoExpiradaPorTempo || 0),
+          },
+          dadosPagamentoCadastrados: Boolean(payload?.dadosPagamento?.temDados),
+          historico: historico.map((item: any) => ({
+            id: String(item?.id || ""),
+            plano: item?.plano === "PREMIUM" ? "PREMIUM" : item?.plano === "PRO" ? "PRO" : "-",
+            valorAssinatura: Number(item?.valorAssinatura || 0),
+            percentual: Number(item?.percentual || 5),
+            valorComissao: Number(item?.valorComissao || 0),
+            status: String(item?.status || "pendente"),
+            criadoEm: item?.criadoEm ? String(item.criadoEm) : null,
+            liberadoEm: item?.liberadoEm ? String(item.liberadoEm) : null,
+            indicadoRef: String(item?.indicadoRef || "-"),
+            pagamentoRef: String(item?.pagamentoRef || "-"),
+          })),
+        });
+      } catch {
+        setDivulgadorData(emptyDivulgadorData);
+      } finally {
+        setCarregandoDivulgador(false);
+      }
+    }
+
+    void carregarDivulgador();
+  }, [user]);
+
+  const codigoIndicacao = divulgadorData.codigoIndicacao || "-";
+  const linkIndicacao = divulgadorData.linkIndicacao || (divulgadorData.codigoIndicacao
+    ? `https://insanegps.com.br/convite/${encodeURIComponent(divulgadorData.codigoIndicacao)}`
+    : "");
+
+  async function copiarTexto(texto: string, mensagem: string) {
+    if (!texto) return;
+    try {
+      await navigator.clipboard.writeText(texto);
+      setMsg(mensagem);
+    } catch {
+      setMsg("Nao foi possivel copiar agora.");
+    }
+  }
+
+  async function compartilharConvite() {
+    if (!linkIndicacao) {
+      setMsg("Codigo de indicacao indisponivel.");
+      return;
+    }
+
+    const texto = `Use meu convite INSANE GPS: ${linkIndicacao}`;
+
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        await navigator.share({
+          title: "INSANE GPS",
+          text: texto,
+          url: linkIndicacao,
+        });
+        return;
+      }
+
+      await navigator.clipboard.writeText(texto);
+      setMsg("Convite copiado para compartilhar.");
+    } catch {
+      setMsg("Nao foi possivel compartilhar agora.");
+    }
+  }
+
+  function irParaHistorico() {
+    const target = document.getElementById("historico-comissoes");
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   function saveProfile(e: FormEvent) {
     e.preventDefault();
@@ -305,6 +493,74 @@ export function ProfilePanel() {
     <section className="sectionPane neoPane profilePage">
       <h1>{t.profileTitle}</h1>
       <p className="muted">{t.profileSubtitle}</p>
+
+      <article className="referralCard">
+        <header className="referralHead">
+          <h2>{t.ganheDinheiroIndicando}</h2>
+          <span className="muted" style={{ fontSize: "0.9rem" }}>
+            {carregandoDivulgador ? "Carregando..." : `UID: ${user.uid}`}
+          </span>
+        </header>
+
+        <div className="referralCodes">
+          <p><strong>{t.meuCodigoIndicacao}:</strong> {codigoIndicacao}</p>
+          <p style={{ overflowWrap: "anywhere" }}><strong>{t.meuLinkIndicacao}:</strong> {linkIndicacao || "-"}</p>
+        </div>
+
+        <div className="referralActions">
+          <button type="button" className="ghost" onClick={() => void copiarTexto(codigoIndicacao, "Codigo copiado.")}>{t.copiarCodigo}</button>
+          <button type="button" className="ghost" onClick={() => void copiarTexto(linkIndicacao, "Link copiado.")}>{t.copiarLink}</button>
+          <button type="button" className="ghost" onClick={() => void compartilharConvite()}>{t.compartilharConvite}</button>
+          <button type="button" className="ghost" onClick={irParaHistorico}>{t.historicoComissoes}</button>
+          <Link href="/dados-pagamento" className="btnSecondary" style={{ textAlign: "center" }}>
+            {t.dadosPagamento}
+          </Link>
+        </div>
+
+        <div className="referralStatsGrid">
+          <div className="refStat"><span>{t.indicados}</span><strong>{divulgadorData.resumo.indicados}</strong></div>
+          <div className="refStat"><span>{t.assinantesAtivos}</span><strong>{divulgadorData.resumo.assinaturasAtivas}</strong></div>
+          <div className="refStat"><span>{t.comissaoPendente}</span><strong>{formatCurrency(divulgadorData.resumo.comissaoPendente)}</strong></div>
+          <div className="refStat"><span>{t.comissaoLiberada}</span><strong>{formatCurrency(divulgadorData.resumo.comissaoLiberada)}</strong></div>
+          <div className="refStat"><span>{t.comissaoAprovada}</span><strong>{formatCurrency(divulgadorData.resumo.comissaoAprovada)}</strong></div>
+          <div className="refStat"><span>{t.comissaoPaga}</span><strong>{formatCurrency(divulgadorData.resumo.comissaoPaga)}</strong></div>
+          <div className="refStat"><span>{t.comissaoCancelada}</span><strong>{formatCurrency(divulgadorData.resumo.comissaoCancelada)}</strong></div>
+          <div className="refStat"><span>{t.pixBloqueado}</span><strong>{formatCurrency(divulgadorData.resumo.comissaoBloqueadaPixInvalido)}</strong></div>
+          <div className="refStat"><span>{t.expiradaPorPlano}</span><strong>{formatCurrency(divulgadorData.resumo.comissaoExpiradaPorPlano)}</strong></div>
+          <div className="refStat"><span>{t.expiradaPorTempo}</span><strong>{formatCurrency(divulgadorData.resumo.comissaoExpiradaPorTempo)}</strong></div>
+        </div>
+
+        <div className="noticeBlock" style={{ marginTop: "0.8rem" }}>
+          <p style={{ margin: 0 }}>
+            {t.dadosPagamento}: {divulgadorData.dadosPagamentoCadastrados ? "Cadastrados" : "Pendentes"}
+          </p>
+          <p style={{ margin: 0 }}>{t.regraPlanoAtivo}</p>
+          <p style={{ margin: "0.5rem 0 0" }}>{t.regraPixMesmoTitular}</p>
+        </div>
+
+        <div id="historico-comissoes" style={{ marginTop: "1rem" }}>
+          <h3 style={{ marginBottom: "0.5rem" }}>{t.historicoComissoes}</h3>
+          {divulgadorData.historico.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>{t.nenhumaComissao}</p>
+          ) : (
+            <div className="tripGrid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+              {divulgadorData.historico.map((item) => (
+                <article key={item.id} className="tripCard" style={{ display: "grid", gap: "0.38rem" }}>
+                  <p><strong>Plano:</strong> {item.plano}</p>
+                  <p><strong>Valor assinatura:</strong> {formatCurrency(item.valorAssinatura)}</p>
+                  <p><strong>Percentual:</strong> {Number(item.percentual || 5)}%</p>
+                  <p><strong>Valor da comissao:</strong> {formatCurrency(item.valorComissao)}</p>
+                  <p><strong>Status:</strong> {statusLabel(item.status)}</p>
+                  <p><strong>Data de criacao:</strong> {formatDate(item.criadoEm)}</p>
+                  <p><strong>Data de liberacao:</strong> {formatDate(item.liberadoEm)}</p>
+                  <p><strong>Usuario indicado:</strong> {item.indicadoRef || "-"}</p>
+                  <p><strong>Pagamento:</strong> {item.pagamentoRef || "-"}</p>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </article>
 
       <form className="formGrid" onSubmit={saveProfile}>
         <label>
